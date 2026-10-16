@@ -13,9 +13,6 @@ const PORT = 3000;
 app.use(
   cors()
 );
-const userRoute = require("./Routers/userRouter");
-
-app.use("/", userRoute);
 
 app.listen(PORT, () => {
   console.log("Sunucu 3000 portunda çalışıyor.");

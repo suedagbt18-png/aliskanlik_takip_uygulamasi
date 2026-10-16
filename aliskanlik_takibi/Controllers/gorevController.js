@@ -2,13 +2,13 @@ const db = require("../Database/db");
 
 // Gorev listesini getiren fonksiyon
 const getGorev = (req, res) => {
-  const query = "SELECT * FROM gorevler";
+  const kullaniciID = req.tokenPayload.kullanici_id;
+  const query = "SELECT * FROM gorevler WHERE kullanici_id = ?";
 
-  db.query(query, (err, results) => {
+  db.query(query, [kullaniciID], (err, results) => {
     if (err) {
-      res.status(500).send("Veritabanında bir hata oluştu. Hata:" + err);
+      return res.status(500).json({ code: "db" });
     }
-
     res.status(200).send(results);
   });
 };
@@ -64,13 +64,14 @@ const addGorev = (req, res) => {
 const updateGorev = (req, res) => {
   const { gorev_title, gorev_body, gorev_puani, gorev_etiketi, gorev_id } =
     req.body;
+    const kullaniciID = req.tokenPayload.kullanici_id;
 
   const query = `UPDATE gorevler 
                  SET gorev_title=?, gorev_body=?, gorev_puani=?, gorev_etiketi=?
-                 WHERE gorev_id=?`;
+                 WHERE gorev_id=? AND kullanici_id = ?`;
   db.query(
     query,
-    [gorev_title, gorev_body, gorev_puani, gorev_etiketi, gorev_id],
+    [gorev_title, gorev_body, gorev_puani, gorev_etiketi, gorev_id, kullaniciID],
     (err, result) => {
       if (err) {
         console.error("Veri güncelleme hatası:", err);
@@ -88,11 +89,12 @@ const updateGorev = (req, res) => {
 // Görev silme fonksiyonu
 const deleteGorev = (req, res) => {
   const { gorev_id } = req.body;
+  const kullaniciID = req.tokenPayload.kullanici_id;
 
   const query = `DELETE FROM gorevler
-                WHERE gorev_id=?`;
+                WHERE gorev_id=? AND kullanici_id = ?`;
 
-  db.query(query, [gorev_id], (err, result) => {
+  db.query(query, [gorev_id, kullaniciID], (err, result) => {
     if (err) {
       console.error("Veri silme hatası.", err);
       return res
@@ -117,14 +119,15 @@ const gorevBasarili = (req, res) => {
   const kullaniciID = req.tokenPayload.kullanici_id;
 
   //Görev ID üzerinden gorevler tablosundaki ilgili kaydı al+
-  const findGorevQuery = "SELECT * FROM gorevler WHERE gorev_id = ?";
+  const findGorevQuery = "SELECT * FROM gorevler WHERE gorev_id = ? AND kullanici_id = ? AND yapildi_mi = 0 ";
 
-  db.query(findGorevQuery, [gorev_id], (gorevErr, gorevResults) => {
-    if (gorevErr) {
-      console.log("hata", gorevErr);
-
-      return res.status(500).send({ code: "db" });
-    }
+  db.query(findGorevQuery, [gorev_id, kullaniciID], (gorevErr, gorevResults) => {
+  if (gorevErr) {
+    return res.status(500).send({ code: "db" });
+  }
+  if (gorevResults.length === 0) {
+    return res.status(404).json({ code: "notFound", mesaj: "Görev bulunamadı ya da zaten işaretlenmiş." });
+  }
     const gorevInfo = gorevResults[0];
 
     const query = `SELECT * FROM gorevler
@@ -319,13 +322,15 @@ const gorevBasarisiz = (req, res) => {
    const kullaniciID = req.tokenPayload.kullanici_id;
 
   // görev id üzerinden ilgili kaydı al.
-  const findGorevQuery = "SELECT * FROM gorevler WHERE gorev_id = ?";
+  const findGorevQuery = "SELECT * FROM gorevler WHERE gorev_id = ? AND kullanici_id = ? AND yapildi_mi = 0 ";
 
-  db.query(findGorevQuery, gorev_id, (err6, results6) => {
+  db.query(findGorevQuery, [gorev_id,kullaniciID], (err6, results6) => {
     if (err6) {
       console.log(err6);
-
       return res.status(500).send({ code: "db" });
+    }
+    if(results6.length===0){
+      return res.status(404).json({code : "not found" , mesaj: "Görev bulunamadı ya da zaten işaretlenmiş."})
     }
     const gorevInfo = results6[0];
     console.log(gorevInfo);
@@ -495,8 +500,8 @@ const getYapilanGorevler = (req, res) => {
     LEFT JOIN gorev_takip 
     ON gorevler.gorev_id = gorev_takip.gorev_id 
     AND gorev_takip.kullanici_id = ? 
-    WHERE yapildi_mi=1`;
-  db.query(query, [kullanici_id], (err, results) => {
+    WHERE gorevler.kullanici_id = ? AND yapildi_mi = 1`;
+  db.query(query, [kullanici_id, kullanici_id], (err, results) => {
     if (err) {
       return res.status(500).send({ code: "db" });
     }
@@ -513,8 +518,8 @@ const getYapilmayanGorevler = (req, res) => {
     LEFT JOIN gorev_takip 
     ON gorevler.gorev_id = gorev_takip.gorev_id 
     AND gorev_takip.kullanici_id = ? 
-    WHERE yapildi_mi=2;`;
-  db.query(query, [kullanici_id], (err, results) => {
+    WHERE gorevler.kullanici_id = ? AND yapildi_mi = 2`;
+  db.query(query, [kullanici_id, kullanici_id], (err, results) => {
     if (err) {
       return res.status(500).send({ code: "db" });
     }

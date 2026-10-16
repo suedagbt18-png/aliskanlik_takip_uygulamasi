@@ -2,11 +2,12 @@ const db = require("../Database/db");
 
 //Alışkanlıkların listesini getiren fonksiyon
 const getAliskanlik = (req, res) => {
-  const query = "SELECT * FROM aliskanliklar";
+    const kullaniciID = req.tokenPayload.kullanici_id;
+  const query = "SELECT * FROM aliskanliklar WHERE kullanici_id = ?";
 
-  db.query(query, (err, results) => {
+  db.query(query, [kullaniciID], (err, results) => {
     if (err) {
-      res.status(500).send("Veritabanında bir hata oluştu. Hata:" + err);
+      return res.status(500).json({ code: "db" });
     }
     res.status(200).send(results);
   });
@@ -76,9 +77,10 @@ const updateAliskanlik = (req, res) => {
     aliskanlik_etiketi,
     aliskanlik_id,
   } = req.body;
+  const kullaniciID = req.tokenPayload.kullanici_id;
   const query = `UPDATE aliskanliklar 
                  SET  aliskanlik_title =?,aliskanlik_body=?,aliskanlik_puani=?,aliskanlik_etiketi=?
-                 WHERE aliskanlik_id =?`;
+                 WHERE aliskanlik_id =? AND kullanici_id=? `;
 
   db.query(
     query,
@@ -88,6 +90,7 @@ const updateAliskanlik = (req, res) => {
       aliskanlik_puani,
       aliskanlik_etiketi,
       aliskanlik_id,
+      kullaniciID
     ],
     (err, results) => {
       if (err) {
@@ -105,10 +108,11 @@ const updateAliskanlik = (req, res) => {
 
 const deleteAliskanlik = (req, res) => {
   const { aliskanlik_id } = req.body;
+  const kullaniciID = req.tokenPayload.kullanici_id;
 
   const query = `DELETE FROM aliskanliklar
-                WHERE aliskanlik_id=?`;
-  db.query(query, [aliskanlik_id], (err, results) => {
+                WHERE aliskanlik_id=? AND kullanici_id = ?`;
+  db.query(query, [aliskanlik_id,kullaniciID], (err, results) => {
     if (err) {
       console.error("Veri silme hatasi.", err);
       return res.status(500).json({ mesaj: "Alışkanlık bilgisi silinemedi." });
@@ -133,8 +137,8 @@ const aliskanlikBasarili = (req, res) => {
 
   // aliskalnlik ID ile ilgili parametreleri al
 
-  const findAliskanlikQuery = `SELECT * FROM aliskanliklar WHERE aliskanlik_id=?`;
-  db.query(findAliskanlikQuery, [aliskanlik_id], (err, results) => {
+  const findAliskanlikQuery = `SELECT * FROM aliskanliklar WHERE aliskanlik_id=? AND kullanici_id = ? AND yapildi_mi = 0`;
+  db.query(findAliskanlikQuery, [aliskanlik_id,kullaniciID], (err, results) => {
     if (err) {
       console.log(err);
 
@@ -337,8 +341,8 @@ const aliskanlikBasarisiz = (req, res) => {
   // alışkanlık id üzerinden ilgili kaydı al.
 
   const findAliskanlikQuery =
-    "SELECT * FROM aliskanliklar WHERE aliskanlik_id= ?";
-  db.query(findAliskanlikQuery, aliskanlik_id, (err, results) => {
+    "SELECT * FROM aliskanliklar WHERE aliskanlik_id= ? AND kullanici_id = ? AND yapildi_mi = 0 ";
+  db.query(findAliskanlikQuery, [aliskanlik_id,kullaniciID], (err, results) => {
     if (err) {
       return res
         .status(500)
@@ -508,9 +512,9 @@ const getYapilanAliskanliklar =(req,res) =>{
                  LEFT JOIN aliskanlik_takip
                  ON aliskanliklar.aliskanlik_id = aliskanlik_takip.aliskanlik_id
                  AND aliskanlik_takip.kullanici_id =?
-                 WHERE yapildi_mi = 1 `;
+                 WHERE aliskanliklar.kullanici_id = ? AND yapildi_mi = 1 `;
 
-  db.query(query,[kullanici_id],(err,results)=>{
+  db.query(query,[kullanici_id, kullanici_id],(err,results)=>{
     if(err){
       return res.status(500).send({code:"db"});
     }
@@ -527,8 +531,8 @@ const getYapilmayanAliskanliklar =(req,res) =>{
                  LEFT JOIN aliskanlik_takip
                  ON aliskanliklar.aliskanlik_id = aliskanlik_takip.aliskanlik_id
                  AND aliskanlik_takip.kullanici_id =?
-                 WHERE yapildi_mi = 2 `;
-  db.query(query,[kullanici_id],(err,results)=>{
+                 WHERE aliskanliklar.kullanici_id = ? AND yapildi_mi = 2 `;
+  db.query(query,[kullanici_id, kullanici_id],(err,results)=>{
     if(err){
       return res.status(500).send({code:"db"});
     }
