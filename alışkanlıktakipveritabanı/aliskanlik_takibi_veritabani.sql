@@ -281,3 +281,29 @@ TRUNCATE TABLE kullanicilar;
 SET FOREIGN_KEY_CHECKS = 1;
 */
 SELECT * FROM kullanicilar;
+
+-- =========================================
+-- ÖRDEK SİSTEMİ (Ekim 2026)
+-- =========================================
+
+-- Kullanıcıya ördek bilgileri
+ALTER TABLE kullanicilar
+  ADD COLUMN ordek_adi VARCHAR(50) DEFAULT 'Ördek',
+  ADD COLUMN ordek_dogum_tarihi DATETIME DEFAULT CURRENT_TIMESTAMP,
+  ADD COLUMN son_kontrol_tarihi DATE NULL;
+
+-- Alışkanlıklara seri bilgisi
+ALTER TABLE aliskanliklar
+  ADD COLUMN seri INT DEFAULT 0,
+  ADD COLUMN son_yapilma_tarihi DATE NULL;
+
+-- Ölen ördeklerin kaydı
+CREATE TABLE ani_defteri (
+  ani_id INT AUTO_INCREMENT PRIMARY KEY,
+  kullanici_id INT NOT NULL,
+  ordek_adi VARCHAR(50),
+  dogum_tarihi DATETIME,
+  olum_tarihi DATETIME DEFAULT CURRENT_TIMESTAMP,
+  ulastigi_seviye INT,
+  FOREIGN KEY (kullanici_id) REFERENCES kullanicilar(kullanici_id)
+);
