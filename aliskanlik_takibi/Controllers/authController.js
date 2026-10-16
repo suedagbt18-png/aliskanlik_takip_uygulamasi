@@ -46,10 +46,9 @@ const register = async (req, res) => {
   }
 };
 
-
-
 const JWT_SECRET = process.env.JWT_SECRET;
 
+const { gunlukKontrol, asamaBul, ruhHaliBul } = require("../Services/ordekService");
 
 // giriş yapma
 const login = (req, res) => {
@@ -104,20 +103,20 @@ const login = (req, res) => {
 };
 
 //kullanıcı id ile kullanıcı bul.
-const getUserInfo = (req, res) => {
-
+const getUserInfo = async (req, res) => {
   const userId = req.tokenPayload.kullanici_id;
- 
-  const query = "SELECT * FROM kullanicilar WHERE kullanici_id= ?";
-  db.query(query, [userId], (err, results) => {
-    if (err) {
-      return res.status(500).json({ code: "db" });
-    }
-    if (results.length === 0) {
+
+  try {
+    const kontrol = await gunlukKontrol(userId);
+
+    const [rows] = await db.promise().query(
+      "SELECT * FROM kullanicilar WHERE kullanici_id = ?", [userId]
+    );
+    if (rows.length === 0) {
       return res.status(404).json({ code: "Kullanıcı bulunamadı" });
     }
+    const user = rows[0];
 
-    const user = results[0];
     res.json({
       name: user.kullanici_adi,
       surname: user.kullanici_soyadi,
@@ -126,8 +125,18 @@ const getUserInfo = (req, res) => {
       hp: user.kullanici_saglik,
       xp: user.kullanici_tecrübe,
       title: user.kullanici_unvan,
+      ordek: {
+        ad: user.ordek_adi,
+        asama: asamaBul(user.kullanici_seviyesi),
+        ruh_hali: ruhHaliBul(user.kullanici_saglik, user.kullanici_seviyesi),
+        dogum_tarihi: user.ordek_dogum_tarihi,
+      },
+      bildirim: kontrol, // { ceza, oldu, olenOrdek }
     });
-  });
+  } catch (err) {
+    console.error("getUserInfo hatası:", err);
+    res.status(500).json({ code: "db" });
+  }
 };
 
 
