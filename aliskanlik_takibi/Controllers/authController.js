@@ -1,0 +1,147 @@
+
+const db = require("../Database/db");
+const bcrypt = require("bcrypt");
+const jwt = require('jsonwebtoken');
+
+//Kullanıcı ekliyoruz. 
+const register = async (req, res) => {
+  const {
+    kullanici_adi,
+    kullanici_soyadi,
+    kullanici_eposta,
+    kullanici_nickname,
+    kullanici_sifre
+  } = req.body;
+
+  
+  console.log("Gelen body:", req.body);
+  
+  
+
+  try {
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(kullanici_sifre, saltRounds);
+
+    const query = `INSERT INTO kullanicilar (kullanici_adi, kullanici_soyadi, kullanici_eposta, kullanici_nickname, kullanici_sifre) VALUES (?, ?, ?, ?, ?)`;
+
+    const values = [
+      kullanici_adi,
+      kullanici_soyadi,
+      kullanici_eposta,
+      kullanici_nickname,
+      hashedPassword
+    ];
+
+    db.query(query, values, (err, result) => {
+      if (err) {
+        console.error("Veri ekleme hatası:", err);
+        console.error("MySQL Hatası:", err.sqlMessage);
+        return res.status(500).json({ code:"db", mesaj: "Veri eklenemedi." });
+      }
+      return res.status(201).json({ mesaj: "Kullanıcı başarıyla eklendi." });
+    });
+  } catch (err) {
+    console.error("Hashleme hatası:", err);
+    return res.status(500).json({ mesaj: "Sunucu hatası." });
+  }
+};
+
+
+
+const JWT_SECRET = process.env.JWT_SECRET;
+
+
+// giriş yapma
+const login = (req, res) => {
+  const { kullanici_nickname, kullanici_sifre } = req.body;
+
+  const query = "SELECT * FROM kullanicilar WHERE kullanici_nickname = ?";
+  
+  db.query(query, [kullanici_nickname], async (err, results) => {
+    if (err) {
+      console.error("Veritabanı hatası:", err);
+      return res.status(500).json({ mesaj: "Sunucu hatası." });
+    }
+
+  
+
+    if (results.length === 0) {
+      return res.status(401).json({ 
+        succeeded: false,
+        error: "Geçersiz kullanıcı adı veya şifre." 
+      });
+    }
+
+    const user = results[0];
+    const same = await bcrypt.compare(kullanici_sifre, user.kullanici_sifre);
+   
+    
+    
+
+    if (!same) {
+      return res.status(401).json({ 
+        succeeded: false,
+        error: "Geçersiz kullanıcı adı veya şifre." 
+      });
+    }
+
+    // Token oluştur
+    const payload = {
+      kullanici_id: user.kullanici_id,
+      kullanici_nickname: user.kullanici_nickname
+    };
+
+    const token = jwt.sign(payload, JWT_SECRET, {
+      expiresIn: "7d" 
+    });
+    //kullanıcıya döndürür
+    return res.status(200).json({
+      succeeded: true,
+      mesaj: "Giriş başarılı.",
+      token: token
+    });
+  });
+};
+
+//kullanıcı id ile kullanıcı bul.
+const getUserInfo = (req, res) => {
+
+  const userId = req.tokenPayload.kullanici_id;
+ 
+  const query = "SELECT * FROM kullanicilar WHERE kullanici_id= ?";
+  db.query(query, [userId], (err, results) => {
+    if (err) {
+      return res.status(500).json({ code: "db" });
+    }
+    if (results.length === 0) {
+      return res.status(404).json({ code: "Kullanıcı bulunamadı" });
+    }
+
+    const user = results[0];
+    res.json({
+      name: user.kullanici_adi,
+      surname: user.kullanici_soyadi,
+      nickname: user.kullanici_nickname,
+      level: user.kullanici_seviyesi,
+      hp: user.kullanici_saglik,
+      xp: user.kullanici_tecrübe,
+      title: user.kullanici_unvan,
+    });
+  });
+};
+
+
+ module.exports = {
+  register,login,getUserInfo
+};
+
+
+// Kullanıcı adı ve şifre aynı anda kontrol edilmelidir önce hashle sonra kontrol et. kullanıcı ve şifreye ayrı ayrı yanıt verirsen saldırganlara kolaylık sağlarız. 
+
+// Middleware Function +
+
+// Middlewares klasörü oluştur+
+// checkToken.js dosyasını oluştur+
+// İçerisine token kontrolü yapan fonksiyonu yaz + 
+
+// Bu middleware function, tüm api isteklerine kullanılacak+
