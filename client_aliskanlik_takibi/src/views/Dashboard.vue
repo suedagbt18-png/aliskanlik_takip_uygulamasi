@@ -4,7 +4,7 @@
     <div class="row">
       <div class="col-md-4">
         <!--ref sayesinde profil cardın içindeki getuserprofile fonksiyonunu tamamlandi görev kısmında kullanabildik.-->
-        <Profilcard ref="refProfilCard"></Profilcard>
+        <OrdekKart ref="refProfilCard"></OrdekKart>
       </div>
 
       <!-- Görevler Kartı -->
@@ -258,7 +258,7 @@
 <script>
 import Navbar from '@/components/Navbar.vue'
 import Footer from '@/components/Footer.vue'
-import Profilcard from '@/components/Profilcard.vue'
+import OrdekKart from '@/components/OrdekKart.vue'
 import axios from 'axios'
 import Swal from 'sweetalert2'
 import buton from '@/assets/buton.png'
@@ -266,7 +266,7 @@ import buton1 from '@/assets/buton1.png'
 import ekle from '@/assets/ekle.png'
 
 export default {
-  components: { Navbar, Footer, Profilcard },
+  components: { Navbar, Footer, OrdekKart},
   data() {
     return {
       buton: buton,
@@ -502,10 +502,8 @@ export default {
           headers: { Authorization: `Bearer ${token}` },
         })
         .then((res) => {
-          this.$refs.refProfilCard.getUserProfile()
           this.getGorevler()
-          console.log('tebrikler görev başarıyla tamamlandı  : ', res.data)
-          return Swal.fire({
+          this.$refs.refProfilCard.olayGoster(res.data, {
             title: 'Tebrikler',
             text: 'Görevinizi başarıyla tamamladınız.',
             icon: 'success',
@@ -562,12 +560,10 @@ export default {
           headers: { Authorization: `Bearer ${token}` },
         })
         .then((res) => {
-          this.$refs.refProfilCard.getUserProfile()
           this.getGorevler()
-          console.log('görev tamamlanmadı  : ', res.data)
-          return Swal.fire({
+          this.$refs.refProfilCard.olayGoster(res.data, {
             title: 'Biraz daha gayret.',
-            text: 'Görevinizi tamamlamadınız.',
+            text: res.data.mesaj,
             icon: 'error',
             confirmButtonText: 'Tamam',
           })
@@ -621,12 +617,10 @@ export default {
           headers: { Authorization: `Bearer ${token}` },
         })
         .then((res) => {
-          this.$refs.refProfilCard.getUserProfile()
           this.getAliskanliklar()
-          console.log('tebrikler alışkanlık başarıyla eklendi : ', res.data)
-          return Swal.fire({
-            title: 'Tebrikler',
-            text: 'Alışkanlığınızı başarıyla tamamladınız.',
+          this.$refs.refProfilCard.olayGoster(res.data, {
+            title: `Tebrikler! 🔥 ${res.data.seri} gün`,
+            text: 'Alışkanlığını tamamladın, ördeğin çok mutlu.',
             icon: 'success',
             confirmButtonText: 'Tamam',
           })
@@ -674,12 +668,10 @@ export default {
           headers: { Authorization: `Bearer ${token}` },
         })
         .then((res) => {
-          this.$refs.refProfilCard.getUserProfile()
           this.getAliskanliklar()
-          console.log('alışkanlık tamamlanmadı : ', res.data)
-          return Swal.fire({
+          this.$refs.refProfilCard.olayGoster(res.data, {
             title: 'Biraz daha gayret.',
-            text: 'Alışkanlığınızı  tamamlamadınız.',
+            text: res.data.mesaj,
             icon: 'error',
             confirmButtonText: 'Tamam',
           })

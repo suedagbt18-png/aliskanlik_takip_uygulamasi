@@ -107,7 +107,8 @@ const getUserInfo = async (req, res) => {
   const userId = req.tokenPayload.kullanici_id;
 
   try {
-    const kontrol = await gunlukKontrol(userId);
+        // Günlük kontrol sadece ?kontrol=1 ile istenirse yapılır (ördek kartı ister)
+    const kontrol = req.query.kontrol === "1" ? await gunlukKontrol(userId) : null;
 
     const [rows] = await db.promise().query(
       "SELECT * FROM kullanicilar WHERE kullanici_id = ?", [userId]
@@ -138,10 +139,32 @@ const getUserInfo = async (req, res) => {
     res.status(500).json({ code: "db" });
   }
 };
+// Yeni yumurtaya isim ver (sadece adı boşken)
+const ordekIsimVer = async (req, res) => {
+  const kullaniciID = req.tokenPayload.kullanici_id;
+  const ad = (req.body.ad || "").trim();
 
+  if (ad.length < 1 || ad.length > 20) {
+    return res.status(400).json({ code: "gecersiz", mesaj: "İsim 1-20 karakter olmalı." });
+  }
+
+  try {
+    const [sonuc] = await db.promise().query(
+      `UPDATE kullanicilar SET ordek_adi = ? WHERE kullanici_id = ? AND ordek_adi IS NULL`,
+      [ad, kullaniciID]
+    );
+    if (sonuc.affectedRows === 0) {
+      return res.status(400).json({ code: "zatenVar", mesaj: "Ördeğinin zaten bir adı var." });
+    }
+    res.status(200).json({ code: "success", ad });
+  } catch (err) {
+    console.error("ordekIsimVer hatası:", err);
+    res.status(500).json({ code: "db" });
+  }
+};
 
  module.exports = {
-  register,login,getUserInfo
+  register,login,getUserInfo,ordekIsimVer
 };
 
 

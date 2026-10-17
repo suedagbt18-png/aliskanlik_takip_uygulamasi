@@ -313,3 +313,5 @@ ALTER TABLE aliskanliklar ADD COLUMN son_basarisiz_tarihi DATE NULL;
 ALTER TABLE aliskanlik_takip ADD COLUMN yapildi_mi BOOLEAN;
 
 DROP TABLE seviye_puanlari;
+
+ALTER TABLE kullanicilar ALTER COLUMN ordek_adi SET DEFAULT NULL;

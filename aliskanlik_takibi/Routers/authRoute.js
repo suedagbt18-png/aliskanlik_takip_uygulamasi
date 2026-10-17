@@ -12,6 +12,8 @@ router.post('/register', authController.register);
 router.post('/login',authController.login);
 //kullanıcı profilini getir
 router.get('/getUserInfo',authMiddleware,authController.getUserInfo);
+//ordeğe isim veriri
+router.post('/ordekIsimVer', authMiddleware, authController.ordekIsimVer);
 
 //middleware
 
