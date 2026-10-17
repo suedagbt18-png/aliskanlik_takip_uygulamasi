@@ -307,3 +307,9 @@ CREATE TABLE ani_defteri (
   ulastigi_seviye INT,
   FOREIGN KEY (kullanici_id) REFERENCES kullanicilar(kullanici_id)
 );
+
+ALTER TABLE aliskanliklar ADD COLUMN son_basarisiz_tarihi DATE NULL;
+
+ALTER TABLE aliskanlik_takip ADD COLUMN yapildi_mi BOOLEAN;
+
+DROP TABLE seviye_puanlari;

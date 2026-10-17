@@ -1,5 +1,8 @@
 const db = require("../Database/db");
 
+const pdb = db.promise();
+const { odulVer, cezaVer, IYILESME } = require("../Services/ordekService");
+
 //Alışkanlıkların listesini getiren fonksiyon
 const getAliskanlik = (req, res) => {
     const kullaniciID = req.tokenPayload.kullanici_id;
@@ -37,7 +40,7 @@ WHERE kullanici_id= ? AND aliskanlik_title=? `;
     }
     if (results.length > 0) {
       return res.status(400).json({
-        code: " alreadyExist",
+        code: "alreadyExist",
         mesaj: "Bu alışkanlığı zaten eklediniz.",
       });
     }
@@ -122,365 +125,80 @@ const deleteAliskanlik = (req, res) => {
 };
 
 // alışkanlık tamamlama fonksiyonu kullanici seviyesi arttığında sağlık puanı 50 oluyor tecrübe puanı sıfır oluyor.
-const aliskanlikBasarili = (req, res) => {
-  // gerekli kayıtları al.
-  const {
-    aliskanlik_id,
-    kullanici_id,
-    aliskanlik_body,
-    aliskanlik_title,
-    aliskanlik_puani,
-    aliskanlik_etiketi,
-  } = req.body;
+const aliskanlikBasarili = async (req, res) => {
+  const { aliskanlik_id } = req.body;
   const kullaniciID = req.tokenPayload.kullanici_id;
 
-
-  // aliskalnlik ID ile ilgili parametreleri al
-
-  const findAliskanlikQuery = `SELECT * FROM aliskanliklar WHERE aliskanlik_id=? AND kullanici_id = ? AND yapildi_mi = 0`;
-  db.query(findAliskanlikQuery, [aliskanlik_id,kullaniciID], (err, results) => {
-    if (err) {
-      console.log(err);
-
-      return res
-        .status(500)
-        .json({ code: "db", mesaj: "Böyle bir alışkanlık bulunamadı." });
+  try {
+    // 1. İşaretle ve seriyi güncelle: sadece bu kullanıcınınsa ve bugün işaretlenmediyse
+    //    (seri, son_yapilma_tarihi'nden ÖNCE yazıldığı için eski tarihe bakarak hesaplanır)
+    const [isaret] = await pdb.query(
+      `UPDATE aliskanliklar
+       SET seri = IF(son_yapilma_tarihi = CURDATE() - INTERVAL 1 DAY, seri + 1, 1),
+           son_yapilma_tarihi = CURDATE()
+       WHERE aliskanlik_id = ? AND kullanici_id = ?
+         AND (son_yapilma_tarihi IS NULL OR son_yapilma_tarihi < CURDATE())
+         AND (son_basarisiz_tarihi IS NULL OR son_basarisiz_tarihi < CURDATE())`,
+      [aliskanlik_id, kullaniciID]
+    );
+    if (isaret.affectedRows === 0) {
+      return res.status(404).json({ code: "notFound", mesaj: "Alışkanlık bulunamadı ya da bugün zaten işaretlendi." });
     }
 
-    const aliskanlikInfo = results[0];
-    console.log(aliskanlikInfo);
+    const [rows] = await pdb.query(`SELECT aliskanlik_puani, seri FROM aliskanliklar WHERE aliskanlik_id = ?`, [aliskanlik_id]);
+    const { aliskanlik_puani, seri } = rows[0];
 
-    //alışkanlık takip tablosuna ekledi.
-    const takipQuery = `INSERT INTO aliskanlik_takip (kullanici_id,aliskanlik_id) VALUES (?,?)`;
-    db.query(takipQuery, [kullaniciID, aliskanlik_id], (err1, results1) => {
-      if (err1) {
-        console.log(err1);
+    // 2. Takip tablosuna kayıt (ileride istatistik ekranında kullanacağız)
+    await pdb.query(
+      `INSERT INTO aliskanlik_takip (kullanici_id, aliskanlik_id, tarih, yapildi_mi) VALUES (?, ?, CURDATE(), 1)`,
+      [kullaniciID, aliskanlik_id]
+    );
 
-        return res
-          .status(500)
-          .json({ code: "db", mesaj: "Takip tablosuna eklenemedi." });
-      }
+    // 3. Ödül: XP + can
+    const sonuc = await odulVer(kullaniciID, aliskanlik_puani, IYILESME);
 
-      //kullanıcı tecrübe puanını al
-      const mevcutTecrubeQuery = `SELECT kullanici_tecrübe FROM kullanicilar WHERE kullanici_id =?`;
-      db.query(mevcutTecrubeQuery, [kullaniciID], (err, results) => {
-        if (err) {
-          return res
-            .status(500)
-            .json({ code: "db", mesaj: " mevcut tecrübe puanı alınamadı." });
-        }
-
-        if (results.length === 0) {
-          return res
-            .status(404)
-            .json({ code: "notFound", mesaj: "Kullanıcı bulunamadı." });
-        }
-
-        //tecrübe puanına aliskanlik puanını ekle
-        const mevcut_tecrube = results[0].kullanici_tecrübe;
-        let yeni_tecrube = mevcut_tecrube + aliskanlikInfo.aliskanlik_puani;
-
-        //güncel kullanıcı tecrübe değeri
-        const updateTecrube = `UPDATE kullanicilar
-                               SET kullanici_tecrübe=?
-                               WHERE kullanici_id = ?`;
-        db.query(updateTecrube, [yeni_tecrube, kullaniciID], (err) => {
-          if (err) {
-            return res
-              .status(500)
-              .json({ code: "db", mesaj: "Tecrübe puanı güncellenemedi." });
-          }
-
-          // alışkanlıklar tablosunda alışkanlık durumunu güncelle yapildi=1
-
-          const updateAliskanlikDurumuQuery= `UPDATE aliskanliklar
-                                              SET yapildi_mi=1
-                                              WHERE aliskanlik_id =?`;
-            db.query(updateAliskanlikDurumuQuery,[aliskanlik_id],(err,results)=>{
-              if(err){
-                console.log("Alışkanlık durumu güncellenemedi.",err);
-                return res.status(500).json({code:"db",mesaj:"Alışkanlık durumu güncellenemedi."})
-              }
-          
-         
-            // seviye işlemleri
-
-            // 1. Önce kullanıcının mevcut seviyesini al
-            const mevcutSeviyeQuery = `SELECT kullanici_seviyesi FROM kullanicilar WHERE kullanici_id = ?`;
-            db.query(
-              mevcutSeviyeQuery,
-              [kullaniciID],
-              (err, mevcutResults) => {
-                if (err) {
-                  return res
-                    .status(500)
-                    .send({ code: "db", mesaj: "Mevcut seviye alınamadı." });
-                }
-
-                const mevcutSeviye = mevcutResults[0].kullanici_seviyesi;
-
-                // 2. Yeni seviyeyi belirle
-                const seviyeBelirlemeQuery = `SELECT seviye FROM seviye_puanlari WHERE seviye_puanlari_puan = ?`;
-                db.query(
-                  seviyeBelirlemeQuery,
-                  [yeni_tecrube],
-                  (err, seviyeResults) => {
-                    if (err) {
-                      return res.status(500).send({ code: "db" });
-                    }
-
-                    const belirlenenSeviye = seviyeResults[0].seviye;
-
-                    // 3. Eğer yeni seviye > mevcut seviye ise, seviye güncelle ve XP'yi sıfırla
-                    let updateSeviyeQuery;
-                    let updateSeviyeParams;
-
-                    if (belirlenenSeviye > mevcutSeviye) {
-                                        updateSeviyeQuery = `
-                          UPDATE kullanicilar 
-                          SET kullanici_seviyesi = ?, kullanici_tecrübe = 0 , kullanici_saglik = 50
-                          WHERE kullanici_id = ?
-                        `;
-                      updateSeviyeParams = [belirlenenSeviye, kullaniciID];
-                    } else {
-                      updateSeviyeQuery = `
-                                    UPDATE kullanicilar 
-                                    SET kullanici_seviyesi = ? 
-                                    WHERE kullanici_id = ?
-                                  `;
-                      updateSeviyeParams = [belirlenenSeviye, kullaniciID];
-                    }
-
-                    db.query(
-                      updateSeviyeQuery,
-                      updateSeviyeParams,
-                      (err, results) => {
-                        if (err) {
-                          console.log("hata"+err);
-                          
-                          return res.status(500).json({
-                            code: "db",
-                            mesaj: "Seviye bilgisi güncellenemedi.",
-                          });
-                        }
-
-                        //unvan güncelle
-                        const getSeviyeQuery = "SELECT * FROM seviyeler";
-                        db.query(getSeviyeQuery, (err, results) => {
-                          if (err) {
-                            return res
-                              .status(500)
-                              .json({ code: "db", mesaj: "Seviye alınamadı." });
-                          }
-
-                          const filteredValue = results.filter(
-                            (x) =>
-                              x.seviye_araligi_baslangic <= belirlenenSeviye &&
-                              x.seviye_araligi_bitis >= belirlenenSeviye
-                          );
-                          const unvan = filteredValue[0].unvan;
-
-                          const updateUnvanQuery = `
-                              UPDATE kullanicilar
-                              SET kullanici_unvan = ?
-                              WHERE kullanici_id = ?
-                            `;
-
-                          db.query(
-                            updateUnvanQuery,
-                            [unvan, kullaniciID],
-                            (err3) => {
-                              if (err3) {
-                                return res.status(500).json({
-                                  code: "db",
-                                  mesaj: "Unvan güncellenemedi",
-                                  hata: err3,
-                                });
-                              }
-
-                              return res.status(200).json({
-                                code: "success",
-                                mesaj: "Seviye ve unvan başarıyla güncellendi.",
-                                yeni_seviye: belirlenenSeviye,
-                                yeni_unvan: unvan,
-                                puan:
-                                  belirlenenSeviye > mevcutSeviye
-                                    ? 0
-                                    : yeni_tecrube,
-                              });
-                            }
-                          );
-                        });
-                       
-                      }
-                    );
-                  }
-                );
-              }
-            );
-          });
-        });
-      });
-    });
-  });
+    res.status(200).json({ code: "success", mesaj: "Alışkanlık tamamlandı!", seri, ...sonuc });
+  } catch (err) {
+    console.error("aliskanlikBasarili hatası:", err);
+    res.status(500).json({ code: "db" });
+  }
 };
 
 //alışkanlık tamamlamama fonksiyonu çalışıyor. seviyesi düştüğünde sağlık puanı yenilenip 50 oluyor tecrübe puanı da sıfırlanıyor.
-const aliskanlikBasarisiz = (req, res) => {
-  // gerekli parametreleri al
-  const {
-    aliskanlik_id,
-    kullanici_id,
-    aliskanlik_body,
-    aliskanlik_title,
-    aliskanlik_puani,
-    aliskanlik_etiketi,
-  } = req.body;
-    const kullaniciID = req.tokenPayload.kullanici_id;
+const aliskanlikBasarisiz = async (req, res) => {
+  const { aliskanlik_id } = req.body;
+  const kullaniciID = req.tokenPayload.kullanici_id;
 
-  // alışkanlık id üzerinden ilgili kaydı al.
-
-  const findAliskanlikQuery =
-    "SELECT * FROM aliskanliklar WHERE aliskanlik_id= ? AND kullanici_id = ? AND yapildi_mi = 0 ";
-  db.query(findAliskanlikQuery, [aliskanlik_id,kullaniciID], (err, results) => {
-    if (err) {
-      return res
-        .status(500)
-        .json({ code: "db", mesaj: "Alışkanlık bilgisi alınamadı." });
+  try {
+    const [isaret] = await pdb.query(
+      `UPDATE aliskanliklar
+       SET seri = 0, son_basarisiz_tarihi = CURDATE()
+       WHERE aliskanlik_id = ? AND kullanici_id = ?
+         AND (son_yapilma_tarihi IS NULL OR son_yapilma_tarihi < CURDATE())
+         AND (son_basarisiz_tarihi IS NULL OR son_basarisiz_tarihi < CURDATE())`,
+      [aliskanlik_id, kullaniciID]
+    );
+    if (isaret.affectedRows === 0) {
+      return res.status(404).json({ code: "notFound", mesaj: "Alışkanlık bulunamadı ya da bugün zaten işaretlendi." });
     }
-    const aliskanlikInfo = results[0];
-    console.log(aliskanlikInfo);
 
-    //alışkanlık takip tablosuna ekle
-    const takipQuery = `INSERT INTO aliskanlik_takip (kullanici_id, aliskanlik_id) VALUES(?,?)`;
-    db.query(takipQuery, [kullaniciID, aliskanlik_id], (err) => {
-      if (err) {
-        return res.status(500).json({
-          code: "db",
-          mesaj: "Alışkanlık takip tablosuna eklenemedi.",
-        });
-      }
+    const [rows] = await pdb.query(`SELECT aliskanlik_puani FROM aliskanliklar WHERE aliskanlik_id = ?`, [aliskanlik_id]);
 
-      // KUllanıcı sağlık puanın al.
-      const mevcut_saglikQuery = `SELECT kullanici_saglik, kullanici_seviyesi FROM kullanicilar WHERE kullanici_id = ?`;
-      db.query(mevcut_saglikQuery, [kullaniciID], (err, results) => {
-        if (err) {
-          return res
-            .status(500)
-            .json({ code: "db", mesaj: "Mevcut sağlık değeri alınamadı." });
-        }
-        if (results.length === 0) {
-          return res
-            .status(404)
-            .json({ code: "notFound", mesaj: "Kullanıcı bulunamadı." });
-        }
+    await pdb.query(
+      `INSERT INTO aliskanlik_takip (kullanici_id, aliskanlik_id, tarih, yapildi_mi) VALUES (?, ?, CURDATE(), 0)`,
+      [kullaniciID, aliskanlik_id]
+    );
 
-        // sağlık puanından görev puanını düşür.
-        const mevcut_saglik = results[0].kullanici_saglik;
-        console.log("mevcut sağlık" + mevcut_saglik);
+    const sonuc = await cezaVer(kullaniciID, rows[0].aliskanlik_puani);
+    const mesaj = sonuc.oldu
+      ? `${sonuc.olenOrdek ?? "Ördeğin"} öldü... Anı defterine eklendi.`
+      : "Ördeğin üzüldü, canı azaldı.";
 
-        let yeni_saglik = mevcut_saglik - aliskanlikInfo.aliskanlik_puani;
-        console.log("Yeni sağlık" + yeni_saglik);
-
-        let kullaniciMevcutSeviye = results[0].kullanici_seviyesi;
-
-        // kullanıcı seviyesini belirleme işlemleri
-        if (yeni_saglik <= 0) {
-          let kullaniciGuncelSeviye = kullaniciMevcutSeviye - 1;
-
-          const findAliskanlikQuery = "SELECT * FROM seviyeler";
-
-          db.query(findAliskanlikQuery, (err, results) => {
-            if (err) {
-              return res
-                .status(500)
-                .json({ code: "db", mesaj: "alışkanlık bulunamadı." });
-            }
-
-            const seviyeler = results;
-
-            let temp = seviyeler.filter(
-              (x) =>
-                x.seviye_araligi_baslangic <= kullaniciGuncelSeviye &&
-                x.seviye_araligi_bitis >= kullaniciGuncelSeviye
-            );
-
-            let yeniUnvan = temp[0].unvan;
-
-            // güncel kullanıcı sağlık değerini al.
-            const updateSaglik = `UPDATE kullanicilar
-                           SET kullanici_saglik = 50, kullanici_tecrübe= 0, kullanici_seviyesi = ?, kullanici_unvan = ?
-                           WHERE kullanici_id = ?`;
-            db.query(
-              updateSaglik,
-              [kullaniciGuncelSeviye, yeniUnvan, kullaniciID],
-              (err10, results) => {
-                if (err10) {
-                  return res.status(500).json({
-                    code: "db",
-                    mesaj: "Sağlık puanı güncellenemedi.1",
-                  });
-                }
-
-                //alışkanlık tablosunda alışkanlık durumunu güncelle yapilmadı = 2
-                const updateAliskanlikDurumuQuery = `UPDATE aliskanliklar
-                                                     SET yapildi_mi =2
-                                                     WHERE aliskanlik_id=?`;
-                  db.query(updateAliskanlikDurumuQuery,[aliskanlik_id],(err,results)=>{
-                   if(err){
-                console.log("Alışkanlık durumu güncellenemedi.",err);
-                return res.status(500).json({code:"db",mesaj:"Alışkanlık durumu güncellenemedi."})
-              }
-                  
-                
-                  return res.status(200).send({
-                    code: "succes",
-                    mesaj: "Seviyenizi kaybettiniz.",
-                     yeni_seviye:kullaniciGuncelSeviye,
-                    yeni_unvan:yeniUnvan,
-                    tecrübe:0,
-                    saglik:50
-                  });
-                });
-              }
-            );
-          });
-        } else {
-          //güncel kullanıcı sağlık değerini al.
-          const updateSaglik = `UPDATE kullanicilar
-                               SET kullanici_saglik = ?
-                               WHERE kullanici_id = ?`;
-          db.query(
-            updateSaglik,
-            [yeni_saglik, kullaniciID],
-            (err, results) => {
-              if (err) {
-                return res.status(500).json({
-                  code: "db",
-                  mesaj: "Yeni sağlık değeri girilemedi.",
-                });
-              }
-                   //alışkanlık tablosunda alışkanlık durumunu güncelle yapilmadı = 2
-                const updateAliskanlikDurumuQuery = `UPDATE aliskanliklar
-                                                     SET yapildi_mi =2
-                                                     WHERE aliskanlik_id=?`;
-                  db.query(updateAliskanlikDurumuQuery,[aliskanlik_id],(err,results)=>{
-                   if(err){
-                console.log("Alışkanlık durumu güncellenemedi.",err);
-                return res.status(500).json({code:"db",mesaj:"Alışkanlık durumu güncellenemedi."})
-              }
-                  
-                return res.status(200).send({
-                  code: "success",
-                  message: "Sağlık puanınız azalıyor.",
-                });
-              });
-            }
-          );
-        }
-      });
-    });
-  });
+    res.status(200).json({ code: "success", mesaj, ...sonuc });
+  } catch (err) {
+    console.error("aliskanlikBasarisiz hatası:", err);
+    res.status(500).json({ code: "db" });
+  }
 };
 
 
@@ -489,7 +207,13 @@ const getMyAliskanlik = (req, res)=>{
 
  const kullanici_id = req.tokenPayload.kullanici_id;
 
-  const query = "SELECT * FROM aliskanliklar WHERE kullanici_id =? AND yapildi_mi=0";
+    const query = `
+    SELECT aliskanlik_id, aliskanlik_title, aliskanlik_body, aliskanlik_puani, aliskanlik_etiketi,
+      CASE WHEN son_yapilma_tarihi < CURDATE() - INTERVAL 1 DAY THEN 0 ELSE seri END AS seri,
+      CASE WHEN son_yapilma_tarihi = CURDATE() THEN 1
+           WHEN son_basarisiz_tarihi = CURDATE() THEN 2
+           ELSE 0 END AS yapildi_mi
+    FROM aliskanliklar WHERE kullanici_id = ?`;
 
   db.query(query,[kullanici_id],(err,results)=>{
     if(err){

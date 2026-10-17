@@ -1,4 +1,6 @@
 const db = require("../Database/db");
+const pdb = db.promise();
+const { odulVer, cezaVer } = require("../Services/ordekService");
 
 // Gorev listesini getiren fonksiyon
 const getGorev = (req, res) => {
@@ -105,371 +107,66 @@ const deleteGorev = (req, res) => {
   });
 };
 
-// Görev tamamlama fonksiyonu !!!!!!!!!! kullanıcı her seviye atladığında tecrübe puanı sıfırlanmalı !!!!!!!!!! --> onun dışında herşey çalışıyor.
-const gorevBasarili = (req, res) => {
-  // Alınan kayıt üzerinden ilgili paremetreleri al
-  const {
-    gorev_id,
-    kullanici_id,
-    gorev_title,
-    gorev_body,
-    gorev_puani,
-    gorev_etiketi,
-  } = req.body;
+// Görev tamamlama fonksiyonu 
+const gorevBasarili = async (req, res) => {
+  const { gorev_id } = req.body;
   const kullaniciID = req.tokenPayload.kullanici_id;
 
-  //Görev ID üzerinden gorevler tablosundaki ilgili kaydı al+
-  const findGorevQuery = "SELECT * FROM gorevler WHERE gorev_id = ? AND kullanici_id = ? AND yapildi_mi = 0 ";
+  try {
+    // 1. İşaretle: sadece bu kullanıcının ve henüz işaretlenmemiş göreviyse
+    const [isaret] = await pdb.query(
+      `UPDATE gorevler SET yapildi_mi = 1
+       WHERE gorev_id = ? AND kullanici_id = ? AND yapildi_mi = 0`,
+      [gorev_id, kullaniciID]
+    );
+    if (isaret.affectedRows === 0) {
+      return res.status(404).json({ code: "notFound", mesaj: "Görev bulunamadı ya da zaten işaretlenmiş." });
+    }
 
-  db.query(findGorevQuery, [gorev_id, kullaniciID], (gorevErr, gorevResults) => {
-  if (gorevErr) {
-    return res.status(500).send({ code: "db" });
+    const [rows] = await pdb.query(`SELECT gorev_puani FROM gorevler WHERE gorev_id = ?`, [gorev_id]);
+
+    // 2. Takip kaydı
+    await pdb.query(`INSERT INTO gorev_takip (kullanici_id, gorev_id) VALUES (?, ?)`, [kullaniciID, gorev_id]);
+
+    // 3. Ödül: sadece XP (iyileşme alışkanlıklara özel)
+    const sonuc = await odulVer(kullaniciID, rows[0].gorev_puani, 0);
+
+    res.status(200).json({ code: "success", mesaj: "Görev tamamlandı!", ...sonuc });
+  } catch (err) {
+    console.error("gorevBasarili hatası:", err);
+    res.status(500).json({ code: "db" });
   }
-  if (gorevResults.length === 0) {
-    return res.status(404).json({ code: "notFound", mesaj: "Görev bulunamadı ya da zaten işaretlenmiş." });
-  }
-    const gorevInfo = gorevResults[0];
-
-    const query = `SELECT * FROM gorevler
-                WHERE kullanici_id=? AND gorev_id = ?`;
-    db.query(query, [kullaniciID, gorev_id], (err1, results1) => {
-      if (err1) {
-        return res.status(500).json({ code: "db", mesaj: "Hata oluştu" });
-      }
-      if (results1.length === 0) {
-        return res
-          .status(400)
-          .json({ code: "notFound", mesaj: "Böyle bir görev bulunamadı." });
-      }
-
-      // gorev_takip tablosuna kayıt ekle
-      const takipQuery = `INSERT INTO gorev_takip (kullanici_id,gorev_id) VALUES(?,?)`;
-      db.query(takipQuery, [kullaniciID, gorev_id], (err3) => {
-        if (err3) {
-          return res
-            .status(500)
-            .json({ code: "db", mesaj: "Görev takip tablosuna eklenemedi." });
-        }
-
-        // kullanıcı tecrübe puanını al
-        const mevcut_tecrube = `SELECT kullanici_tecrübe FROM kullanicilar WHERE kullanici_id =?`;
-        db.query(mevcut_tecrube, [kullaniciID], (err4, results) => {
-          if (err4) {
-            return res
-              .status(500)
-              .json({ code: "db", mesaj: "Mevcut tecrübe alınamadı." });
-          }
-          if (results.length === 0) {
-            return res
-              .status(404)
-              .json({ code: "notFound", mesaj: "Kullanıcı bulunamadı." });
-          }
-
-          //tecrübe puanına görev puanını ekle
-          const mevcut_tecrube = results[0].kullanici_tecrübe;
-          let yeni_tecrube = mevcut_tecrube + gorevInfo.gorev_puani;
-
-          // Güncel kullanici_tecrube değerini al,
-          const updateTecrube = ` UPDATE kullanicilar
-                       SET kullanici_tecrübe = ?
-                       WHERE kullanici_id = ?`;
-
-          db.query(updateTecrube, [yeni_tecrube, kullaniciID], (err5) => {
-            if (err5) {
-              return res
-                .status(500)
-                .json({ code: "db", mesaj: "Tecrübe puanı güncellenemedi." });
-            }
-
-             //gorev tablosunda ilgili kaydın yapildi kısmını güncelle yapıldı =1 
-             const updateYapildiQuery = `UPDATE gorevler 
-                                        SET yapildi_mi = 1
-                                        WHERE gorev_id =?`;
-              db.query(updateYapildiQuery,[gorev_id], (err,result)=>{
-                if(err){
-                  console.error('Gorev durumu güncellenemedi.',err);
-                  return res.status(500).json({code: "db", mesaj: "Gorev  durumu güncellenemedi."})
-                }
-             
-
-
-              // Kullanıcının seviyesini belirleme işlemleri
-
-              //mevcut seviyeyi al
-              const mevcutSeviyeQuery = `SELECT kullanici_seviyesi FROM kullanicilar WHERE kullanici_id =?`;
-              db.query(
-                mevcutSeviyeQuery,
-                kullaniciID,
-                (err, mevcutResults) => {
-                  if (err) {
-                    return res
-                      .status(500)
-                      .json({ code: "db", mesaj: "Mevcut seviye alınamadı." });
-                  }
-
-                  const mevcutSeviye = mevcutResults[0].kullanici_seviyesi;
-
-                  // yeni seviyeyi belirle
-                  const seviyeBelirlemeQuery =
-                    "SELECT seviye FROM seviye_puanlari WHERE seviye_puanlari_puan = ?";
-                  db.query(
-                    seviyeBelirlemeQuery,
-                    yeni_tecrube,
-                    (err, yeniResults) => {
-                      if (err) {
-                        return res.status(500).send({ code: "db" });
-                      }
-
-                      const belirlenenSeviye = yeniResults[0].seviye;
-
-                      //Eğer yeni seviye > mevcut seviye ise, seviye güncelle ve puanı sıfırla
-                      let updateSeviyeQuery;
-                      let updateSeviyeParams;
-
-                      if (belirlenenSeviye > mevcutSeviye) {
-                        updateSeviyeQuery = `UPDATE kullanicilar 
-                                        SET kullanici_seviyesi = ?, kullanici_tecrübe = 0, kullanici_saglik = 50
-                                        WHERE kullanici_id =?`;
-                        updateSeviyeParams = [belirlenenSeviye, kullaniciID];
-                      } else {
-                        updateSeviyeQuery = `UPDATE kullanicilar 
-                                         SET kullanici_seviyesi =?
-                                         WHERE kullanici_id=?`;
-                        updateSeviyeParams = [belirlenenSeviye, kullaniciID];
-                      }
-
-                      db.query(
-                        updateSeviyeQuery,
-                        updateSeviyeParams,
-                        (err, results) => {
-                          if (err) {
-                            return res.status(500).json({
-                              code: "db",
-                              mesaj: "Seviye bilgisi güncellenemedi.",
-                            });
-                          }
-
-                          //unvan güncelle
-                          const getSeviyeQuery = `SELECT* FROM seviyeler`;
-                          db.query(getSeviyeQuery, (err, results) => {
-                            if (err) {
-                              return res.status(500).json({
-                                code: "db",
-                                mesaj: "Seviye alınamadı.",
-                              });
-                            }
-                            const filteredValue = results.filter(
-                              (x) =>
-                                x.seviye_araligi_baslangic <=
-                                  belirlenenSeviye &&
-                                x.seviye_araligi_bitis >= belirlenenSeviye
-                            );
-
-                            const unvan = filteredValue[0].unvan;
-
-                            const updateUnvanQuery =
-                              "UPDATE kullanicilar SET kullanici_unvan =? WHERE kullanici_id =?";
-                            db.query(
-                              updateUnvanQuery,
-                              [unvan, kullaniciID],
-                              (err) => {
-                                if (err) {
-                                  return res.status(500).json({
-                                    code: "db",
-                                    mesaj: "Unvan güncellenemedi.",
-                                  });
-                                }
-                                return res.status(200).json({
-                                  code: "succes",
-                                  mesaj:
-                                    "Seviye ve unvan başarıyla güncellendi.",
-                                  yeni_seviye: belirlenenSeviye,
-                                  yeni_unvan: unvan,
-                                  tecrübe:
-                                    belirlenenSeviye > mevcutSeviye
-                                      ? 0
-                                      : yeni_tecrube,
-                                });
-                              }
-                            );
-                          });
-                        }
-                      );
-                    }
-                  );
-                }
-              );
-
-            });
-          });
-        });
-      });
-    });
-  });
 };
 
 //Görev tamamlamama fonksiyonu
-const gorevBasarisiz = (req, res) => {
-  //gerekli parametreleri al.
-  const {
-    gorev_id,
-    kullanici_id,
-    gorev_title,
-    gorev_body,
-    gorev_puani,
-    gorev_etiketi,
-  } = req.body;
-   const kullaniciID = req.tokenPayload.kullanici_id;
+const gorevBasarisiz = async (req, res) => {
+  const { gorev_id } = req.body;
+  const kullaniciID = req.tokenPayload.kullanici_id;
 
-  // görev id üzerinden ilgili kaydı al.
-  const findGorevQuery = "SELECT * FROM gorevler WHERE gorev_id = ? AND kullanici_id = ? AND yapildi_mi = 0 ";
-
-  db.query(findGorevQuery, [gorev_id,kullaniciID], (err6, results6) => {
-    if (err6) {
-      console.log(err6);
-      return res.status(500).send({ code: "db" });
+  try {
+    const [isaret] = await pdb.query(
+      `UPDATE gorevler SET yapildi_mi = 2
+       WHERE gorev_id = ? AND kullanici_id = ? AND yapildi_mi = 0`,
+      [gorev_id, kullaniciID]
+    );
+    if (isaret.affectedRows === 0) {
+      return res.status(404).json({ code: "notFound", mesaj: "Görev bulunamadı ya da zaten işaretlenmiş." });
     }
-    if(results6.length===0){
-      return res.status(404).json({code : "not found" , mesaj: "Görev bulunamadı ya da zaten işaretlenmiş."})
-    }
-    const gorevInfo = results6[0];
-    console.log(gorevInfo);
 
-    // gorev_takip tablosuna kayıt ekle
-    const takipQuery = `INSERT INTO gorev_takip (kullanici_id,gorev_id) VALUES(?,?)`;
-    db.query(takipQuery, [kullaniciID, gorev_id], (err8) => {
-      if (err8) {
-        return res
-          .status(500)
-          .json({ code: "db", mesaj: "Görev takip tablosuna eklenemedi." });
-      }
+    const [rows] = await pdb.query(`SELECT gorev_puani FROM gorevler WHERE gorev_id = ?`, [gorev_id]);
 
-      //kullanıcı sağlık puanını al
-      const mevcut_saglikQuery = `SELECT kullanici_saglik, kullanici_seviyesi FROM kullanicilar WHERE kullanici_id = ?`;
-      db.query(mevcut_saglikQuery, [kullaniciID], (err9, results9) => {
-        if (err9) {
-          return res
-            .status(500)
-            .json({ code: "db", mesaj: "mevcut sağlık alınamadı." });
-        }
-        if (results9.length === 0) {
-          return res
-            .status(404)
-            .json({ code: "notFound", mesaj: "Kullanıcı bulunamadı." });
-        }
+    await pdb.query(`INSERT INTO gorev_takip (kullanici_id, gorev_id) VALUES (?, ?)`, [kullaniciID, gorev_id]);
 
-        // sağlık puanından görev puanını düşür.
-        const mevcut_saglik = results9[0].kullanici_saglik;
-        console.log("Mevcut sağlık:" + mevcut_saglik);
+    const sonuc = await cezaVer(kullaniciID, rows[0].gorev_puani);
+    const mesaj = sonuc.oldu
+      ? `${sonuc.olenOrdek ?? "Ördeğin"} öldü... Anı defterine eklendi.`
+      : "Ördeğin üzüldü, canı azaldı.";
 
-        let yeni_saglik = mevcut_saglik - gorevInfo.gorev_puani;
-        console.log("Yeni sağlık:" + yeni_saglik);
-
-        let kullaniciMevcutSeviye = results9[0].kullanici_seviyesi;
-
-        // sağlık puanı durumuna göre seviye belirleme
-        if (yeni_saglik <= 0) {
-          let kullaniciGuncelSeviye = kullaniciMevcutSeviye - 1;
-
-          const findSeviyelerQuery = "SELECT * FROM seviyeler";
-
-          db.query(findSeviyelerQuery, (err, results) => {
-            if (err) {
-              return res
-                .status(500)
-                .json({ code: "db", mesaj: "Veritabanı hatası oluştu." });
-            }
-
-            const seviyeler = results;
-
-            let temp = seviyeler.filter(
-              (x) =>
-                x.seviye_araligi_baslangic <= kullaniciGuncelSeviye &&
-                x.seviye_araligi_bitis >= kullaniciGuncelSeviye
-            );
-
-            let yeniUnvan = temp[0].unvan;
-
-            // güncel kullanici_saglik değerini al
-            const updateSaglik = `UPDATE kullanicilar
-                           SET kullanici_saglik = 50,kullanici_tecrübe =0, kullanici_seviyesi = ?, kullanici_unvan = ?
-                           WHERE kullanici_id = ?`;
-            db.query(
-              updateSaglik,
-              [kullaniciGuncelSeviye, yeniUnvan, kullaniciID],
-              (err10, results) => {
-                if (err10) {
-                  return res.status(500).json({
-                    code: "db",
-                    mesaj: "Sağlık puanı güncellenemedi.1",
-                  });
-                }
-
-                 //gorevin tamamlanmama durumunu güncelle yapılmadı=2
-
-                  const updateTamamlanmadıQuery = `UPDATE gorevler 
-                                                   SET yapildi_mi=2
-                                                   WHERE gorev_id =?`;
-                db.query(updateTamamlanmadıQuery,[gorev_id],(err,results)=>{
-                  if(err){
-                    console.log("Gorev durumu güncellenemedi ",err)
-                    return res.status(500).json({code:"db",mesaj:"Gorev durumu güncellenemedi."})
-                  }
-
-                  return res.status(200).send({
-                    code: "success",
-                    message: "Seviyenizi kaybettiniz.",
-                    yeni_seviye: kullaniciGuncelSeviye,
-                    yeni_unvan: yeniUnvan,
-                    tecrübe: 0,
-                    saglik: 50,
-                  });
-                });
-              }
-            );
-          });
-        } else {
-          // güncel kullanici_saglik değerini al
-          const updateSaglik = `UPDATE kullanicilar
-                           SET kullanici_saglik = ?
-                           WHERE kullanici_id = ?`;
-
-          db.query(
-            updateSaglik,
-            [yeni_saglik, kullaniciID],
-            (err10, results) => {
-              if (err10) {
-                return res
-                  .status(500)
-                  .json({ mesaj: "Sağlık puanı güncellenemedi.2" });
-              }
-
-             
-
-                  //gorevin tamamlanmama durumunu güncelle yapılmadı=2
-
-                  const updateTamamlanmadıQuery = `UPDATE gorevler 
-                                                   SET yapildi_mi=2
-                                                   WHERE gorev_id =?`;
-                db.query(updateTamamlanmadıQuery,[gorev_id],(err,results)=>{
-                  if(err){
-                    console.log("Gorev durumu güncellenemedi ",err)
-                    return res.status(500).json({code:"db",mesaj:"Gorev durumu güncellenemedi."})
-                  }
-
-               
-
-                return res.status(200).send({
-                  code: "success",
-                  message: "Sağlık puanın azalıyor.",
-                });
-              });
-            }
-          );
-        }
-      });
-    });
-  });
+    res.status(200).json({ code: "success", mesaj, ...sonuc });
+  } catch (err) {
+    console.error("gorevBasarisiz hatası:", err);
+    res.status(500).json({ code: "db" });
+  }
 };
 
 // Kullanıcı bazında gorevler tablosundan listeleme yapalım

@@ -154,6 +154,7 @@
                   <div class="flex-grow-1 me-3">
                     {{ aliskanlik.aliskanlik_title }}
                     <div class="text-secondary">
+                      <span v-if="aliskanlik.seri > 0" class="badge bg-warning text-dark ms-1">🔥 {{ aliskanlik.seri }} gün</span>
                       <span>not: {{ aliskanlik.aliskanlik_body }} </span>
                       <br />
                       <span>puan: {{ aliskanlik.aliskanlik_puani }} XP</span>
@@ -410,11 +411,18 @@ export default {
           }
         })
         .catch((err) => {
-          if (err.response.data.code === 'alreadyExist') {
+          console.log('Hata', err)
+          if (err.response?.data?.code === 'alreadyExist') {
             Swal.fire({
               title: 'Uyarı!',
               text: 'Bu alışkanlık zaten kayıtlı.',
               icon: 'warning',
+            })
+          } else {
+            Swal.fire({
+              title: 'Hata',
+              text: err.response?.data?.mesaj || 'Alışkanlık eklenemedi.',
+              icon: 'error',
             })
           }
         })
@@ -505,7 +513,13 @@ export default {
           })
         })
         .catch((err) => {
-          console.error('görev tamamlanamadı', err)
+          console.log('Hata', err)
+          Swal.fire({
+            title: 'Hata',
+            text: err.response?.data?.mesaj || 'Bir şeyler ters gitti.',
+            icon: 'error',
+            confirmButtonText: 'Tamam',
+          })
         })
     },
     tamamlanmadiGorev() {
@@ -560,6 +574,12 @@ export default {
         })
         .catch((err) => {
           console.log('Hata', err)
+          Swal.fire({
+            title: 'Hata',
+            text: err.response?.data?.mesaj || 'Bir şeyler ters gitti.',
+            icon: 'error',
+            confirmButtonText: 'Tamam',
+          })
         })
     },
     tamamlandiAliskanlik() {

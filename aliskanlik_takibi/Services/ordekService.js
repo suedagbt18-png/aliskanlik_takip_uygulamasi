@@ -47,7 +47,67 @@ async function ordekOldur(k) {
   );
 
   await pdb.query(`UPDATE aliskanliklar SET seri = 0 WHERE kullanici_id = ?`, [k.kullanici_id]);
+ 
+ }
+
+const SEVIYE_XP = 100; // her seviye için gereken XP
+const IYILESME = 5;    // tamamlanan alışkanlık başına can
+
+async function unvanBul(seviye) {
+  const [rows] = await pdb.query(
+    `SELECT unvan FROM seviyeler
+     WHERE ? BETWEEN seviye_araligi_baslangic AND seviye_araligi_bitis`,
+    [seviye]
+  );
+  return rows[0]?.unvan ?? null;
 }
+
+// XP ve can ver, gerekirse seviye atlat
+async function odulVer(kullaniciID, xp, can) {
+  const [rows] = await pdb.query(
+    `SELECT kullanici_seviyesi, kullanici_tecrübe, kullanici_saglik
+     FROM kullanicilar WHERE kullanici_id = ?`,
+    [kullaniciID]
+  );
+  let seviye = rows[0].kullanici_seviyesi;
+  let tecrube = rows[0].kullanici_tecrübe + xp;
+  const saglik = Math.min(rows[0].kullanici_saglik + can, 100);
+
+  let seviyeAtladi = false;
+  while (tecrube >= SEVIYE_XP) {
+    tecrube -= SEVIYE_XP;
+    seviye++;
+    seviyeAtladi = true;
+  }
+
+  const unvan = await unvanBul(seviye);
+  await pdb.query(
+    `UPDATE kullanicilar
+     SET kullanici_seviyesi = ?, kullanici_tecrübe = ?, kullanici_saglik = ?,
+         kullanici_unvan = COALESCE(?, kullanici_unvan)
+     WHERE kullanici_id = ?`,
+    [seviye, tecrube, saglik, unvan, kullaniciID]
+  );
+  return { seviye, tecrube, saglik, seviyeAtladi, asama: asamaBul(seviye) };
+}
+
+// Can düşür; 0'a inerse (yumurta değilse) ördek ölür
+async function cezaVer(kullaniciID, miktar) {
+  const [rows] = await pdb.query(`SELECT * FROM kullanicilar WHERE kullanici_id = ?`, [kullaniciID]);
+  const k = rows[0];
+  const yeniCan = k.kullanici_saglik - miktar;
+
+  if (yeniCan <= 0 && !yumurtaMi(k.kullanici_seviyesi)) {
+    await ordekOldur(k);
+    return { oldu: true, olenOrdek: k.ordek_adi };
+  }
+
+  const saglik = Math.max(yeniCan, 1);
+  await pdb.query(`UPDATE kullanicilar SET kullanici_saglik = ? WHERE kullanici_id = ?`, [saglik, kullaniciID]);
+  return { oldu: false, saglik };
+}
+
+
 
 // Kullanıcı her girdiğinde çalışır
 async function gunlukKontrol(kullaniciID) {
@@ -72,9 +132,9 @@ async function gunlukKontrol(kullaniciID) {
   // Arada sadece son kontrol günü aktifti, o gün yapılanları düşüyoruz.
   const [sayim] = await pdb.query(
     `SELECT COUNT(*) AS toplam,
-            COALESCE(SUM(son_yapilma_tarihi = DATE(?)), 0) AS kontrol_gunu_yapilan
+            COALESCE(SUM(son_yapilma_tarihi = DATE(?) OR son_basarisiz_tarihi = DATE(?)), 0) AS kontrol_gunu_yapilan
      FROM aliskanliklar WHERE kullanici_id = ?`,
-    [k.son_kontrol_tarihi, kullaniciID]
+    [k.son_kontrol_tarihi, k.son_kontrol_tarihi, kullaniciID]
   );
   const kacirilan = sayim[0].toplam * k.gecen_gun - Number(sayim[0].kontrol_gunu_yapilan);
   const ceza = Math.max(kacirilan, 0) * GUNLUK_CEZA;
@@ -101,4 +161,4 @@ async function gunlukKontrol(kullaniciID) {
   return { ceza, oldu: false };
 }
 
-module.exports = { gunlukKontrol, ordekOldur, asamaBul, ruhHaliBul, yumurtaMi };
+module.exports = { gunlukKontrol, ordekOldur, odulVer, cezaVer, asamaBul, ruhHaliBul, yumurtaMi, IYILESME };
