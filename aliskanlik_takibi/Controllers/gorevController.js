@@ -89,22 +89,27 @@ const updateGorev = (req, res) => {
 };
 
 // Görev silme fonksiyonu
-const deleteGorev = (req, res) => {
+const deleteGorev = async (req, res) => {
   const { gorev_id } = req.body;
   const kullaniciID = req.tokenPayload.kullanici_id;
 
-  const query = `DELETE FROM gorevler
-                WHERE gorev_id=? AND kullanici_id = ?`;
-
-  db.query(query, [gorev_id, kullaniciID], (err, result) => {
-    if (err) {
-      console.error("Veri silme hatası.", err);
-      return res
-        .status(500)
-        .json({ code: "db", mesaj: "Görev bilgisi silinemedi." });
+  try {
+    const [sahip] = await pdb.query(
+      `SELECT gorev_id FROM gorevler WHERE gorev_id = ? AND kullanici_id = ?`,
+      [gorev_id, kullaniciID]
+    );
+    if (sahip.length === 0) {
+      return res.status(404).json({ code: "notFound", mesaj: "Görev bulunamadı." });
     }
-    res.status(200).json({ code: "success", mesaj: "Görev bilgisi silindi." });
-  });
+
+    await pdb.query(`DELETE FROM gorev_takip WHERE gorev_id = ?`, [gorev_id]);
+    await pdb.query(`DELETE FROM gorevler WHERE gorev_id = ?`, [gorev_id]);
+
+    res.status(200).json({ code: "success", mesaj: "Görev silindi." });
+  } catch (err) {
+    console.error("deleteGorev hatası:", err);
+    res.status(500).json({ code: "db", mesaj: "Görev silinemedi." });
+  }
 };
 
 // Görev tamamlama fonksiyonu 

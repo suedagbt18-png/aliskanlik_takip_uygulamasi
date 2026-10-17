@@ -315,3 +315,9 @@ ALTER TABLE aliskanlik_takip ADD COLUMN yapildi_mi BOOLEAN;
 DROP TABLE seviye_puanlari;
 
 ALTER TABLE kullanicilar ALTER COLUMN ordek_adi SET DEFAULT NULL;
+
+ALTER TABLE aliskanliklar
+  ADD COLUMN en_uzun_seri INT DEFAULT 0,
+  ADD COLUMN olusturma_tarihi DATETIME DEFAULT CURRENT_TIMESTAMP;
+
+UPDATE aliskanliklar SET en_uzun_seri = seri WHERE aliskanlik_id > 0;

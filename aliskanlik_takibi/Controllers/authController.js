@@ -163,17 +163,31 @@ const ordekIsimVer = async (req, res) => {
   }
 };
 
+// Kullanıcının ölen ördekleri
+const aniDefteri = async (req, res) => {
+  const kullaniciID = req.tokenPayload.kullanici_id;
+
+  try {
+    const [rows] = await db.promise().query(
+      `SELECT ani_id, ordek_adi, ulastigi_seviye,
+              DATE_FORMAT(dogum_tarihi, '%Y-%m-%d') AS dogum,
+              DATE_FORMAT(olum_tarihi, '%Y-%m-%d') AS olum,
+              DATEDIFF(olum_tarihi, dogum_tarihi) AS yasadigi_gun
+       FROM ani_defteri WHERE kullanici_id = ?
+       ORDER BY olum_tarihi DESC`,
+      [kullaniciID]
+    );
+
+    const anilar = rows.map((r) => ({ ...r, asama: asamaBul(r.ulastigi_seviye) }));
+    res.status(200).json({ code: "success", anilar });
+  } catch (err) {
+    console.error("aniDefteri hatası:", err);
+    res.status(500).json({ code: "db", mesaj: "Anı defteri alınamadı." });
+  }
+};
+
  module.exports = {
-  register,login,getUserInfo,ordekIsimVer
+  register,login,getUserInfo,ordekIsimVer,aniDefteri
 };
 
 
-// Kullanıcı adı ve şifre aynı anda kontrol edilmelidir önce hashle sonra kontrol et. kullanıcı ve şifreye ayrı ayrı yanıt verirsen saldırganlara kolaylık sağlarız. 
-
-// Middleware Function +
-
-// Middlewares klasörü oluştur+
-// checkToken.js dosyasını oluştur+
-// İçerisine token kontrolü yapan fonksiyonu yaz + 
-
-// Bu middleware function, tüm api isteklerine kullanılacak+

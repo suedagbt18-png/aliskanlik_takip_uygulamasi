@@ -38,6 +38,15 @@
             <li class="nav-item">
               <RouterLink
                 class="nav-link"
+                :class="{ active: $route.path === '/ani-defteri' }"
+                to="/ani-defteri"
+              >
+                Anı Defteri
+              </RouterLink>
+            </li>
+            <li class="nav-item">
+              <RouterLink
+                class="nav-link"
                 :class="{ active: $route.path === '/yardım' }"
                 to="/yardım"
               >

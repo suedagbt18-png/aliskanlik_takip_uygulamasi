@@ -109,19 +109,29 @@ const updateAliskanlik = (req, res) => {
 
 //Alışkanlık silme fonksiyonu
 
-const deleteAliskanlik = (req, res) => {
+const deleteAliskanlik = async (req, res) => {
   const { aliskanlik_id } = req.body;
   const kullaniciID = req.tokenPayload.kullanici_id;
 
-  const query = `DELETE FROM aliskanliklar
-                WHERE aliskanlik_id=? AND kullanici_id = ?`;
-  db.query(query, [aliskanlik_id,kullaniciID], (err, results) => {
-    if (err) {
-      console.error("Veri silme hatasi.", err);
-      return res.status(500).json({ mesaj: "Alışkanlık bilgisi silinemedi." });
+  try {
+    // Önce bu alışkanlık gerçekten bu kullanıcının mı?
+    const [sahip] = await pdb.query(
+      `SELECT aliskanlik_id FROM aliskanliklar WHERE aliskanlik_id = ? AND kullanici_id = ?`,
+      [aliskanlik_id, kullaniciID]
+    );
+    if (sahip.length === 0) {
+      return res.status(404).json({ code: "notFound", mesaj: "Alışkanlık bulunamadı." });
     }
-    res.status(201).json({ mesaj: "Alışkanlık bilgisi silindi." });
-  });
+
+    // Önce takip kayıtları, sonra alışkanlığın kendisi
+    await pdb.query(`DELETE FROM aliskanlik_takip WHERE aliskanlik_id = ?`, [aliskanlik_id]);
+    await pdb.query(`DELETE FROM aliskanliklar WHERE aliskanlik_id = ?`, [aliskanlik_id]);
+
+    res.status(200).json({ code: "success", mesaj: "Alışkanlık silindi." });
+  } catch (err) {
+    console.error("deleteAliskanlik hatası:", err);
+    res.status(500).json({ code: "db", mesaj: "Alışkanlık silinemedi." });
+  }
 };
 
 // alışkanlık tamamlama fonksiyonu kullanici seviyesi arttığında sağlık puanı 50 oluyor tecrübe puanı sıfır oluyor.
@@ -135,6 +145,7 @@ const aliskanlikBasarili = async (req, res) => {
     const [isaret] = await pdb.query(
       `UPDATE aliskanliklar
        SET seri = IF(son_yapilma_tarihi = CURDATE() - INTERVAL 1 DAY, seri + 1, 1),
+           en_uzun_seri = GREATEST(en_uzun_seri, IF(son_yapilma_tarihi = CURDATE() - INTERVAL 1 DAY, seri, 1)),
            son_yapilma_tarihi = CURDATE()
        WHERE aliskanlik_id = ? AND kullanici_id = ?
          AND (son_yapilma_tarihi IS NULL OR son_yapilma_tarihi < CURDATE())
@@ -224,45 +235,6 @@ const getMyAliskanlik = (req, res)=>{
 }
 
 
-// Kullanıcı bazında alışkanlık takiplerinin listelenmesi gerekli (yapıldı-yapılmadı) getYapilanAliskanliklar, getYapilmayanAliskanliklar
-//yapılan alışkanlıkların listelenmesi
-
-const getYapilanAliskanliklar =(req,res) =>{
-
-   const kullanici_id = req.tokenPayload.kullanici_id;
-
-  const query = `SELECT aliskanliklar.aliskanlik_title,aliskanliklar.aliskanlik_body,aliskanliklar.aliskanlik_puani,aliskanliklar.aliskanlik_etiketi,aliskanlik_takip.tarih
-                 FROM aliskanliklar
-                 LEFT JOIN aliskanlik_takip
-                 ON aliskanliklar.aliskanlik_id = aliskanlik_takip.aliskanlik_id
-                 AND aliskanlik_takip.kullanici_id =?
-                 WHERE aliskanliklar.kullanici_id = ? AND yapildi_mi = 1 `;
-
-  db.query(query,[kullanici_id, kullanici_id],(err,results)=>{
-    if(err){
-      return res.status(500).send({code:"db"});
-    }
-    res.status(200).send(results);
-  });
-}
-
-//yapılmayan alışkanlıkların listesi
-const getYapilmayanAliskanliklar =(req,res) =>{
-   const kullanici_id = req.tokenPayload.kullanici_id;
-
-  const query=`SELECT aliskanliklar.aliskanlik_title,aliskanliklar.aliskanlik_body,aliskanliklar.aliskanlik_puani,aliskanliklar.aliskanlik_etiketi,aliskanlik_takip.tarih
-                 FROM aliskanliklar
-                 LEFT JOIN aliskanlik_takip
-                 ON aliskanliklar.aliskanlik_id = aliskanlik_takip.aliskanlik_id
-                 AND aliskanlik_takip.kullanici_id =?
-                 WHERE aliskanliklar.kullanici_id = ? AND yapildi_mi = 2 `;
-  db.query(query,[kullanici_id, kullanici_id],(err,results)=>{
-    if(err){
-      return res.status(500).send({code:"db"});
-    }
-    res.status(200).send(results);
-  });
-}
 
 module.exports = {
   getAliskanlik,
@@ -272,6 +244,5 @@ module.exports = {
   aliskanlikBasarili,
   aliskanlikBasarisiz,
   getMyAliskanlik,
-  getYapilanAliskanliklar,
-  getYapilmayanAliskanliklar
+
 };

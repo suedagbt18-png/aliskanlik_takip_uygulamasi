@@ -39,6 +39,7 @@
                       <span>etiket: {{ gorev.gorev_etiketi }}</span>
                     </div>
                   </div>
+                  <button class="btn btn-sm sil-btn" title="Sil" @click="silGorev(gorev)">🗑️</button>
                   <div v-if="gorev.yapildi_mi == 0" class="form-check m-0">
                     <input
                       class="form-check-input"
@@ -162,6 +163,7 @@
                       <span>etiket: {{ aliskanlik.aliskanlik_etiketi }}</span>
                     </div>
                   </div>
+                  <button class="btn btn-sm sil-btn" title="Sil" @click="silAliskanlik(aliskanlik)">🗑️</button>
                   <div v-if="aliskanlik.yapildi_mi == 0" class="form-check m-0">
                     <input
                       class="form-check-input"
@@ -680,6 +682,53 @@ export default {
           console.log('Hata', err)
         })
     },
+    async silAliskanlik(aliskanlik) {
+      const onay = await Swal.fire({
+        title: `"${aliskanlik.aliskanlik_title}" silinsin mi?`,
+        text: 'Serisi ve geçmişi de silinecek. Bu işlem geri alınamaz.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Evet, sil',
+        cancelButtonText: 'Vazgeç',
+        confirmButtonColor: '#e53935',
+      })
+      if (!onay.isConfirmed) return
+
+      try {
+        const token = localStorage.getItem('token')
+        await axios.delete('http://localhost:3000/deleteAliskanlik', {
+          data: { aliskanlik_id: aliskanlik.aliskanlik_id },
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        this.getAliskanliklar()
+      } catch (err) {
+        Swal.fire({ title: 'Hata', text: err.response?.data?.mesaj || 'Silinemedi.', icon: 'error' })
+      }
+    },
+
+    async silGorev(gorev) {
+      const onay = await Swal.fire({
+        title: `"${gorev.gorev_title}" silinsin mi?`,
+        text: 'Bu işlem geri alınamaz.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Evet, sil',
+        cancelButtonText: 'Vazgeç',
+        confirmButtonColor: '#e53935',
+      })
+      if (!onay.isConfirmed) return
+
+      try {
+        const token = localStorage.getItem('token')
+        await axios.delete('http://localhost:3000/deleteGorev', {
+          data: { gorev_id: gorev.gorev_id },
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        this.getGorevler()
+      } catch (err) {
+        Swal.fire({ title: 'Hata', text: err.response?.data?.mesaj || 'Silinemedi.', icon: 'error' })
+      }
+    },
   },
   created() {
     this.getGorevler()
@@ -759,4 +808,16 @@ export default {
 .pixel-btn:hover img {
   transform: scale(1.05);
 }
+.sil-btn {
+  border: none;
+  background: transparent;
+  font-size: 1.1rem;
+  opacity: 0.4;
+  transition: opacity 0.2s, transform 0.2s;
+}
+.sil-btn:hover {
+  opacity: 1;
+  transform: scale(1.2);
+}
+
 </style>

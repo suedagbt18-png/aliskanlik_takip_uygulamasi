@@ -14,9 +14,10 @@ router.post('/login',authController.login);
 router.get('/getUserInfo',authMiddleware,authController.getUserInfo);
 //ordeğe isim veriri
 router.post('/ordekIsimVer', authMiddleware, authController.ordekIsimVer);
+//ölen ördeklerin tutuldudğu sayfa
+router.get('/aniDefteri', authMiddleware, authController.aniDefteri);
 
 //middleware
-
 router.get("/userRouter",authMiddleware,(req,res) => {
     res.json({mesaj:"Bu bilgi sadece token olan kullanıcıya görünür."})
 })

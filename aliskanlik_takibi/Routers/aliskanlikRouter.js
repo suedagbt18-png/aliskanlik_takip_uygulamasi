@@ -27,10 +27,8 @@ router.post("/aliskanlikBasarisiz",authMiddleware,aliskanlikController.aliskanli
 // kullanıcı bazlı alışkanlık verileri
 router.get("/getMyAliskanlik",authMiddleware,aliskanlikController.getMyAliskanlik);
 
-//yapılan görevlerin kullanıcı bazlı takibi
-router.get("/getYapilanAliskanliklar",authMiddleware,aliskanlikController.getYapilanAliskanliklar);
 
-//yapılmayan görevlerin kullanıcı baazlı takibi
-router.get("/getYapilmayanAliskanliklar",authMiddleware,aliskanlikController.getYapilmayanAliskanliklar);
-
+// Alışkanlık istatistikleri (karne sayfası)
+const istatistikController = require("../Controllers/istatistikController");
+router.get("/aliskanlikIstatistik", authMiddleware, istatistikController.aliskanlikIstatistik);
 module.exports = router;
