@@ -41,4 +41,8 @@ router.get(
   gorevController.getYapilmayanGorevler
 );
 
+// Görev istatistikleri ve listesi (Görevler sayfası)
+const istatistikController = require("../Controllers/istatistikController");
+router.get("/gorevIstatistik", authMiddleware, istatistikController.gorevIstatistik);
+
 module.exports = router;

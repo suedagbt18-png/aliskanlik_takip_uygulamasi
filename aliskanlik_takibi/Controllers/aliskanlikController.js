@@ -1,7 +1,7 @@
 const db = require("../Database/db");
 
 const pdb = db.promise();
-const { odulVer, cezaVer, IYILESME } = require("../Services/ordekService");
+const { odulVer, cezaVer, IYILESME, SERI_BONUSU } = require("../Services/ordekService");
 
 //Alışkanlıkların listesini getiren fonksiyon
 const getAliskanlik = (req, res) => {
@@ -166,9 +166,11 @@ const aliskanlikBasarili = async (req, res) => {
     );
 
     // 3. Ödül: XP + can
-    const sonuc = await odulVer(kullaniciID, aliskanlik_puani, IYILESME);
+     // 3. Ödül: XP + can (her 7 günlük seride ekstra bonus)
+    const seriBonusu = seri > 0 && seri % 7 === 0 ? SERI_BONUSU : 0;
+    const sonuc = await odulVer(kullaniciID, aliskanlik_puani, IYILESME + seriBonusu);
 
-    res.status(200).json({ code: "success", mesaj: "Alışkanlık tamamlandı!", seri, ...sonuc });
+    res.status(200).json({ code: "success", mesaj: "Alışkanlık tamamlandı!", seri, seriBonusu, ...sonuc });
   } catch (err) {
     console.error("aliskanlikBasarili hatası:", err);
     res.status(500).json({ code: "db" });

@@ -321,3 +321,52 @@ ALTER TABLE aliskanliklar
   ADD COLUMN olusturma_tarihi DATETIME DEFAULT CURRENT_TIMESTAMP;
 
 UPDATE aliskanliklar SET en_uzun_seri = seri WHERE aliskanlik_id > 0;
+
+UPDATE seviyeler SET unvan = CASE
+    WHEN seviye_araligi_baslangic < 11 THEN 'Yumurta Bekçisi'
+    WHEN seviye_araligi_baslangic < 21 THEN 'Gölet Çırağı'
+    WHEN seviye_araligi_baslangic < 31 THEN 'Kıyı Gezgini'
+    WHEN seviye_araligi_baslangic < 41 THEN 'Sazlık Ustası'
+    WHEN seviye_araligi_baslangic < 51 THEN 'Göl Muhafızı'
+    WHEN seviye_araligi_baslangic < 61 THEN 'Dalga Kaptanı'
+    WHEN seviye_araligi_baslangic < 71 THEN 'Göç Lideri'
+    WHEN seviye_araligi_baslangic < 81 THEN 'Rüzgâr Kanadı'
+    WHEN seviye_araligi_baslangic < 91 THEN 'Göllerin Bilgesi'
+    ELSE 'Efsanevi Ördek'
+  END
+WHERE seviye_id > 0;
+
+-- Mevcut kullanıcıların unvanlarını da yenile
+UPDATE kullanicilar k
+JOIN seviyeler s ON k.kullanici_seviyesi BETWEEN s.seviye_araligi_baslangic AND s.seviye_araligi_bitis
+SET k.kullanici_unvan = s.unvan
+WHERE k.kullanici_id > 0;
+
+ALTER TABLE gorevler ADD COLUMN olusturma_tarihi DATETIME DEFAULT CURRENT_TIMESTAMP;
+
+-- =========================================
+-- ÇİFTLİK GÜNCELLEMESİ
+-- =========================================
+
+-- Her ördeğin bir rengi var (yumurtadan çıkınca ortaya çıkar)
+ALTER TABLE kullanicilar ADD COLUMN ordek_renk VARCHAR(20) DEFAULT 'beyaz';
+
+-- Mevcut ördeklere rastgele renk ver (sürpriz!)
+UPDATE kullanicilar
+SET ordek_renk = ELT(FLOOR(1 + RAND() * 5), 'beyaz', 'yaban', 'siyah', 'altin', 'lavanta')
+WHERE kullanici_id > 0;
+
+-- Anı defterindeki ördeklerin de rengi olsun
+ALTER TABLE ani_defteri ADD COLUMN renk VARCHAR(20) DEFAULT 'beyaz';
+
+-- Çiftlik: yetişkinliğe kadar büyütülen ördekler
+CREATE TABLE ciftlik (
+  ciftlik_id INT AUTO_INCREMENT PRIMARY KEY,
+  kullanici_id INT NOT NULL,
+  ordek_adi VARCHAR(50),
+  renk VARCHAR(20),
+  dogum_tarihi DATETIME,
+  katilma_tarihi DATETIME DEFAULT CURRENT_TIMESTAMP,
+  buyume_gunu INT,
+  FOREIGN KEY (kullanici_id) REFERENCES kullanicilar(kullanici_id)
+);

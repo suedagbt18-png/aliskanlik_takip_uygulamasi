@@ -1,19 +1,64 @@
 const db = require("../Database/db");
 const pdb = db.promise(); // async/await ile sorgu yazabilmek için
 
+// ---------------- OYUN KURALLARI ----------------
 const GUNLUK_CEZA = 10; // kaçırılan her alışkanlık için günlük can kaybı
+const SEVIYE_XP = 100; // her seviye için gereken XP
+const IYILESME = 10; // tamamlanan alışkanlık başına can
+const SERI_BONUSU = 15; // her 7 günlük seride ekstra can
+const YETISKIN_SEVIYE = 10; // bu seviyede ördek yetişkin olur ve çiftliğe gönderilebilir
+
+// Yumurtadan çıkacak ördeğin rengi: sürpriz! (oran ne kadar büyükse o kadar sık çıkar)
+const RENKLER = [
+  { renk: "beyaz", oran: 35 },
+  { renk: "yaban", oran: 30 },
+  { renk: "siyah", oran: 20 },
+  { renk: "altin", oran: 12 },
+  { renk: "lavanta", oran: 3 }, // nadir!
+];
+
+// Çiftlikteki ördek sayısına göre unvan
+const UNVANLAR = [
+  { enAz: 0, unvan: "Yumurta Bekçisi" },
+  { enAz: 1, unvan: "Acemi Çiftçi" },
+  { enAz: 3, unvan: "Gölet Sahibi" },
+  { enAz: 5, unvan: "Sazlık Ustası" },
+  { enAz: 10, unvan: "Göl Muhafızı" },
+  { enAz: 20, unvan: "Efsanevi Çiftçi" },
+];
+
+function rastgeleRenk() {
+  const toplam = RENKLER.reduce((t, r) => t + r.oran, 0);
+  let zar = Math.random() * toplam;
+  for (const r of RENKLER) {
+    if (zar < r.oran) return r.renk;
+    zar -= r.oran;
+  }
+  return "beyaz";
+}
+
+// Unvan ve bir sonraki unvana ne kadar kaldığı
+function unvanHesapla(ciftlikSayisi) {
+  let simdiki = UNVANLAR[0];
+  let sonraki = null;
+  for (const u of UNVANLAR) {
+    if (ciftlikSayisi >= u.enAz) simdiki = u;
+    else if (!sonraki) sonraki = u;
+  }
+  return { unvan: simdiki.unvan, sonrakiUnvan: sonraki ? sonraki.unvan : null, sonrakiIcin: sonraki ? sonraki.enAz : null };
+}
 
 // Seviyeye göre ördeğin aşaması
 function asamaBul(seviye) {
   if (seviye <= 2) return "yumurta";
-  if (seviye <= 4) return "catlayan_yumurta";
-  if (seviye <= 9) return "yavru";
-  if (seviye <= 19) return "genc";
+  if (seviye <= 3) return "catlayan_yumurta";
+  if (seviye <= 6) return "yavru";
+  if (seviye < YETISKIN_SEVIYE) return "genc";
   return "yetiskin";
 }
 
 function yumurtaMi(seviye) {
-  return seviye <= 4;
+  return seviye <= 3;
 }
 
 // Cana göre ruh hali (yumurta hastalanmaz, soğur)
@@ -24,42 +69,49 @@ function ruhHaliBul(can, seviye) {
   return "hasta";
 }
 
-// Ördek ölünce: anı defterine yaz, kullanıcıyı yeni yumurtayla başlat
-async function ordekOldur(k) {
-  await pdb.query(
-    `INSERT INTO ani_defteri (kullanici_id, ordek_adi, dogum_tarihi, ulastigi_seviye)
-     VALUES (?, ?, ?, ?)`,
-    [k.kullanici_id, k.ordek_adi, k.ordek_dogum_tarihi, k.kullanici_seviyesi]
-  );
-
-  const [unvanlar] = await pdb.query(
-    `SELECT unvan FROM seviyeler
-     WHERE 1 BETWEEN seviye_araligi_baslangic AND seviye_araligi_bitis`
-  );
-
-  // ordek_adi NULL olunca arayüz "yeni yumurtana isim ver" ekranını gösterecek
+// Kullanıcıyı yeni bir yumurtayla başlatır (ölüm ve çiftliğe gönderme sonrası)
+async function yeniYumurta(kullaniciID) {
   await pdb.query(
     `UPDATE kullanicilar
      SET kullanici_seviyesi = 1, kullanici_tecrübe = 0, kullanici_saglik = 100,
-         kullanici_unvan = ?, ordek_adi = NULL, ordek_dogum_tarihi = NOW()
+         ordek_adi = NULL, ordek_renk = ?, ordek_dogum_tarihi = NOW()
      WHERE kullanici_id = ?`,
-    [unvanlar[0]?.unvan ?? null, k.kullanici_id]
+    [rastgeleRenk(), kullaniciID]
   );
+}
 
+// Ördek ölünce: anı defterine yaz, seriler sıfırlanır, yeni yumurta
+async function ordekOldur(k) {
+  await pdb.query(
+    `INSERT INTO ani_defteri (kullanici_id, ordek_adi, renk, dogum_tarihi, ulastigi_seviye)
+     VALUES (?, ?, ?, ?, ?)`,
+    [k.kullanici_id, k.ordek_adi, k.ordek_renk, k.ordek_dogum_tarihi, k.kullanici_seviyesi]
+  );
   await pdb.query(`UPDATE aliskanliklar SET seri = 0 WHERE kullanici_id = ?`, [k.kullanici_id]);
- 
- }
+  await yeniYumurta(k.kullanici_id);
+}
 
-const SEVIYE_XP = 100; // her seviye için gereken XP
-const IYILESME = 5;    // tamamlanan alışkanlık başına can
-
-async function unvanBul(seviye) {
+// Yetişkin ördeği çiftliğe gönder: seriler KORUNUR (bu bir ödül, ceza değil)
+async function ciftligeGonder(kullaniciID) {
   const [rows] = await pdb.query(
-    `SELECT unvan FROM seviyeler
-     WHERE ? BETWEEN seviye_araligi_baslangic AND seviye_araligi_bitis`,
-    [seviye]
+    `SELECT *, DATEDIFF(NOW(), ordek_dogum_tarihi) AS yas FROM kullanicilar WHERE kullanici_id = ?`,
+    [kullaniciID]
   );
-  return rows[0]?.unvan ?? null;
+  const k = rows[0];
+  if (!k) return { hata: "Kullanıcı bulunamadı." };
+  if (asamaBul(k.kullanici_seviyesi) !== "yetiskin") {
+    return { hata: "Ördeğin henüz yetişkin değil." };
+  }
+
+  await pdb.query(
+    `INSERT INTO ciftlik (kullanici_id, ordek_adi, renk, dogum_tarihi, buyume_gunu)
+     VALUES (?, ?, ?, ?, ?)`,
+    [kullaniciID, k.ordek_adi, k.ordek_renk, k.ordek_dogum_tarihi, Math.max(1, k.yas)]
+  );
+  await yeniYumurta(kullaniciID);
+
+  const [[{ sayi }]] = await pdb.query(`SELECT COUNT(*) AS sayi FROM ciftlik WHERE kullanici_id = ?`, [kullaniciID]);
+  return { ordek_adi: k.ordek_adi, renk: k.ordek_renk, buyume_gunu: Math.max(1, k.yas), ciftlikSayisi: sayi, ...unvanHesapla(sayi) };
 }
 
 // XP ve can ver, gerekirse seviye atlat
@@ -80,13 +132,10 @@ async function odulVer(kullaniciID, xp, can) {
     seviyeAtladi = true;
   }
 
-  const unvan = await unvanBul(seviye);
   await pdb.query(
-    `UPDATE kullanicilar
-     SET kullanici_seviyesi = ?, kullanici_tecrübe = ?, kullanici_saglik = ?,
-         kullanici_unvan = COALESCE(?, kullanici_unvan)
+    `UPDATE kullanicilar SET kullanici_seviyesi = ?, kullanici_tecrübe = ?, kullanici_saglik = ?
      WHERE kullanici_id = ?`,
-    [seviye, tecrube, saglik, unvan, kullaniciID]
+    [seviye, tecrube, saglik, kullaniciID]
   );
   return { seviye, tecrube, saglik, seviyeAtladi, asama: asamaBul(seviye) };
 }
@@ -106,8 +155,6 @@ async function cezaVer(kullaniciID, miktar) {
   await pdb.query(`UPDATE kullanicilar SET kullanici_saglik = ? WHERE kullanici_id = ?`, [saglik, kullaniciID]);
   return { oldu: false, saglik };
 }
-
-
 
 // Kullanıcı her girdiğinde çalışır
 async function gunlukKontrol(kullaniciID) {
@@ -129,7 +176,7 @@ async function gunlukKontrol(kullaniciID) {
   if (k.gecen_gun <= 0) return { ceza: 0, oldu: false };
 
   // Kaç alışkanlık-gün kaçırıldı?
-  // Arada sadece son kontrol günü aktifti, o gün yapılanları düşüyoruz.
+  // Arada sadece son kontrol günü aktifti, o gün işaretlenenleri düşüyoruz.
   const [sayim] = await pdb.query(
     `SELECT COUNT(*) AS toplam,
             COALESCE(SUM(son_yapilma_tarihi = DATE(?) OR son_basarisiz_tarihi = DATE(?)), 0) AS kontrol_gunu_yapilan
@@ -161,4 +208,17 @@ async function gunlukKontrol(kullaniciID) {
   return { ceza, oldu: false };
 }
 
-module.exports = { gunlukKontrol, ordekOldur, odulVer, cezaVer, asamaBul, ruhHaliBul, yumurtaMi, IYILESME };
+module.exports = {
+  gunlukKontrol,
+  ordekOldur,
+  ciftligeGonder,
+  odulVer,
+  cezaVer,
+  asamaBul,
+  ruhHaliBul,
+  yumurtaMi,
+  unvanHesapla,
+  rastgeleRenk,
+  IYILESME,
+  SERI_BONUSU,
+};

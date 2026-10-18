@@ -1,5 +1,5 @@
 <template>
-  <Navbar></Navbar>
+  
   <div class="sayfa">
     <div class="baslik">
       <h2>🪦 Anı Defteri</h2>
@@ -11,7 +11,7 @@
 
     <!-- Hiç ördek ölmediyse -->
     <div v-else-if="anilar.length === 0" class="bos">
-      <img :src="gorsel('yavru')" alt="Mutlu ördek" class="bos-img" />
+      <img :src="ordekGorsel('yavru', 'mutlu', 'beyaz')" alt="Mutlu ördek" class="bos-img" />
       <p>Henüz hiçbir ördeğini kaybetmedin.<br />Böyle devam et! 💚</p>
     </div>
 
@@ -24,37 +24,32 @@
 
       <div class="mezarlik">
         <div v-for="ani in anilar" :key="ani.ani_id" class="mezar">
-          <img :src="gorsel(ani.asama)" :alt="ani.ordek_adi" class="mezar-img" />
+          <img :src="gorsel(ani)" :alt="ani.ordek_adi" class="mezar-img" />
           <h4 class="mezar-ad">{{ ani.ordek_adi || 'İsimsiz' }}</h4>
           <p class="mezar-tarih">{{ tarihMetni(ani.dogum) }} – {{ tarihMetni(ani.olum) }}</p>
           <p class="mezar-yas">{{ yasMetni(ani.yasadigi_gun) }}</p>
           <p class="mezar-asama">{{ ASAMA_ADLARI[ani.asama] }} · Seviye {{ ani.ulastigi_seviye }}</p>
+          <p v-if="!yumurtaMi(ani.asama)" class="mezar-asama">{{ RENK_ADLARI[ani.renk] }}</p>
           <p class="mezar-yazi">Huzur içinde yüzsün</p>
         </div>
       </div>
     </template>
   </div>
-  <Footer></Footer>
+
 </template>
 
 <script>
 import Navbar from '@/components/Navbar.vue'
 import Footer from '@/components/Footer.vue'
 import axios from 'axios'
-
-const ASAMA_ADLARI = {
-  yumurta: '🥚 Yumurta',
-  catlayan_yumurta: '🐣 Çatlayan yumurta',
-  yavru: '🐤 Yavru ördek',
-  genc: '🦆 Genç ördek',
-  yetiskin: '🦆 Yetişkin ördek',
-}
+import { ordekGorsel, yumurtaMi, ASAMA_ADLARI, RENK_ADLARI } from '@/utils/ordek'
 
 export default {
   components: { Navbar, Footer },
   data() {
     return {
       ASAMA_ADLARI,
+      RENK_ADLARI,
       yukleniyor: true,
       hata: '',
       anilar: [],
@@ -66,10 +61,12 @@ export default {
     },
   },
   methods: {
+    ordekGorsel,
+    yumurtaMi,
     // Ördeği en mutlu haliyle hatırlıyoruz
-    gorsel(asama) {
-      const hal = asama === 'yumurta' || asama === 'catlayan_yumurta' ? 'sicak' : 'mutlu'
-      return new URL(`../assets/ordek/${asama}_${hal}.png`, import.meta.url).href
+    gorsel(ani) {
+      const hal = yumurtaMi(ani.asama) ? 'sicak' : 'mutlu'
+      return ordekGorsel(ani.asama, hal, ani.renk)
     },
     tarihMetni(tarih) {
       return new Date(tarih + 'T00:00:00Z').toLocaleDateString('tr-TR', {

@@ -1,5 +1,5 @@
 <template>
-  <Navbar></Navbar>
+
   <div class="row justify-content-center sayfa">
     <div class="col-lg-3 d-flex justify-content-center">
       <OrdekKart></OrdekKart>
@@ -90,12 +90,11 @@
       </template>
     </div>
   </div>
-  <Footer></Footer>
+
 </template>
 
 <script>
-import Navbar from '@/components/Navbar.vue'
-import Footer from '@/components/Footer.vue'
+
 import OrdekKart from '@/components/OrdekKart.vue'
 import axios from 'axios'
 
@@ -122,7 +121,7 @@ function tarihNesnesi(tarih) {
 }
 
 export default {
-  components: { Navbar, Footer, OrdekKart },
+  components: { OrdekKart },
   data() {
     return {
       IKONLAR,

@@ -136,4 +136,67 @@ const aliskanlikIstatistik = async (req, res) => {
   }
 };
 
-module.exports = { aliskanlikIstatistik, istatistikHesapla };
+// ---------------- GÖREVLER ----------------
+
+// Görev listesinden özet ve etiket dağılımını hesaplar
+function gorevOzetHesapla(gorevler) {
+  const ozet = { bekleyen: 0, tamamlanan: 0, yapilmayan: 0, kazanilanXP: 0, basariOrani: null };
+  const etiketler = {};
+
+  for (const g of gorevler) {
+    const etiket = g.gorev_etiketi || "Etiketsiz";
+    if (!etiketler[etiket]) etiketler[etiket] = { etiket, tamamlanan: 0, yapilmayan: 0, bekleyen: 0 };
+
+    if (g.yapildi_mi === 1) {
+      ozet.tamamlanan++;
+      ozet.kazanilanXP += Number(g.gorev_puani) || 0;
+      etiketler[etiket].tamamlanan++;
+    } else if (g.yapildi_mi === 2) {
+      ozet.yapilmayan++;
+      etiketler[etiket].yapilmayan++;
+    } else {
+      ozet.bekleyen++;
+      etiketler[etiket].bekleyen++;
+    }
+  }
+
+  const biten = ozet.tamamlanan + ozet.yapilmayan;
+  if (biten > 0) ozet.basariOrani = Math.round((ozet.tamamlanan / biten) * 100);
+
+  // En çok görev olan etiket en üstte
+  const etiketListesi = Object.values(etiketler).sort(
+    (a, b) => b.tamamlanan + b.yapilmayan + b.bekleyen - (a.tamamlanan + a.yapilmayan + a.bekleyen)
+  );
+
+  return { ozet, etiketler: etiketListesi };
+}
+
+// GET /gorevIstatistik
+const gorevIstatistik = async (req, res) => {
+  const kullaniciID = req.tokenPayload.kullanici_id;
+
+  try {
+    const [[{ bugun }]] = await pdb.query(`SELECT DATE_FORMAT(CURDATE(), '%Y-%m-%d') AS bugun`);
+
+    // Her görev + işaretlendiği zaman (gorev_takip'teki son kayıt)
+    const [gorevler] = await pdb.query(
+      `SELECT g.gorev_id, g.gorev_title, g.gorev_body, g.gorev_puani, g.gorev_etiketi, g.yapildi_mi,
+              DATE_FORMAT(g.olusturma_tarihi, '%Y-%m-%d') AS olusturma,
+              DATE_FORMAT(MAX(t.tarih), '%Y-%m-%d') AS isaret_gunu,
+              DATE_FORMAT(MAX(t.tarih), '%H:%i') AS isaret_saati
+       FROM gorevler g
+       LEFT JOIN gorev_takip t ON t.gorev_id = g.gorev_id AND t.kullanici_id = g.kullanici_id
+       WHERE g.kullanici_id = ?
+       GROUP BY g.gorev_id
+       ORDER BY MAX(t.tarih) DESC, g.gorev_id DESC`,
+      [kullaniciID]
+    );
+
+    res.status(200).json({ code: "success", bugun, gorevler, ...gorevOzetHesapla(gorevler) });
+  } catch (err) {
+    console.error("gorevIstatistik hatası:", err);
+    res.status(500).json({ code: "db", mesaj: "Görev istatistikleri alınamadı." });
+  }
+};
+
+module.exports = { aliskanlikIstatistik, istatistikHesapla, gorevIstatistik, gorevOzetHesapla };

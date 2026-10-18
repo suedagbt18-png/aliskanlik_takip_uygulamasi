@@ -1,16 +1,22 @@
 <template>
-  <div class="ordek-kart">
+  <div class="ordek-kart" v-if="yuklendi">
     <!-- Ördeğin adı -->
     <h4 class="ordek-adi">{{ ordek.ad || 'İsimsiz yumurta' }}</h4>
     <p class="ordek-yas">{{ yasMetni }}</p>
 
     <!-- Ördek görseli -->
     <div class="ordek-sahne" :class="ordek.ruh_hali">
-      <img v-if="gorsel" :src="gorsel" :alt="asamaAdi" class="ordek-img" />
+      <img :src="gorsel" :alt="asamaAdi" class="ordek-img" />
     </div>
 
     <!-- Aşama ve ruh hali -->
     <p class="durum">{{ asamaAdi }} · {{ ruhHaliMetni }}</p>
+    <p v-if="!yumurta" class="renk-adi">{{ RENK_ADLARI[ordek.renk] }}</p>
+
+    <!-- Yetişkin olunca: tören butonu -->
+    <button v-if="ordek.asama === 'yetiskin'" class="ciftlik-btn" @click="ciftligeGonder">
+      🏡 Çiftliğe gönder
+    </button>
 
     <!-- Can barı -->
     <div class="bar-etiket">
@@ -28,31 +34,23 @@
       <div class="bar-dolu xp" :style="{ width: xpYuzde + '%' }"></div>
     </div>
 
-    <!-- Seviye ve unvan -->
-    <p class="seviye">Seviye {{ kullanici.level }} · {{ kullanici.title }}</p>
-    <p class="nickname">@{{ kullanici.nickname }}</p>
+    <!-- Seviye, unvan, çiftlik -->
+    <p class="seviye">Seviye {{ kullanici.level }}</p>
+    <p class="unvan">🏅 {{ kullanici.title }} · 🏡 {{ kullanici.ciftlikSayisi }}</p>
+    <p class="nickname">Bakıcısı: @{{ kullanici.nickname }}</p>
   </div>
 </template>
+
 <script>
 import axios from 'axios'
 import Swal from 'sweetalert2'
+import { ordekGorsel, yumurtaMi, ASAMA_ADLARI, RUH_HALLERI, RENK_ADLARI, kacis } from '@/utils/ordek'
 
+const API = 'http://localhost:3000'
 const SEVIYE_XP = 100 // backend'deki ordekService.js ile aynı olmalı
 
-const ASAMA_ADLARI = {
-  yumurta: '🥚 Yumurta',
-  catlayan_yumurta: '🐣 Çatlayan yumurta',
-  yavru: '🐤 Yavru ördek',
-  genc: '🦆 Genç ördek',
-  yetiskin: '🦆 Yetişkin ördek',
-}
-
-const RUH_HALLERI = {
-  sicak: '🔥 Sıcacık',
-  soguk: '🥶 Üşüyor',
-  mutlu: '😊 Mutlu',
-  yorgun: '😐 Yorgun',
-  hasta: '🤒 Hasta',
+function yetki() {
+  return { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
 }
 
 export default {
@@ -60,17 +58,19 @@ export default {
   data() {
     return {
       SEVIYE_XP,
-      kullanici: { nickname: '', level: 1, hp: 100, xp: 0, title: '' },
-      ordek: { ad: null, asama: 'yumurta', ruh_hali: 'sicak', dogum_tarihi: null },
+      RENK_ADLARI,
+      yuklendi: false,
+      kullanici: { nickname: '', level: 1, hp: 100, xp: 0, title: '', ciftlikSayisi: 0 },
+      ordek: { ad: null, asama: 'yumurta', ruh_hali: 'sicak', renk: 'beyaz', dogum_tarihi: null },
       isimSoruluyor: false,
     }
   },
   computed: {
     gorsel() {
-      return new URL(
-        `../assets/ordek/${this.ordek.asama}_${this.ordek.ruh_hali}.png`,
-        import.meta.url,
-      ).href
+      return ordekGorsel(this.ordek.asama, this.ordek.ruh_hali, this.ordek.renk)
+    },
+    yumurta() {
+      return yumurtaMi(this.ordek.asama)
     },
     asamaAdi() {
       return ASAMA_ADLARI[this.ordek.asama] || this.ordek.asama
@@ -93,22 +93,28 @@ export default {
     },
   },
   methods: {
+    // Görseli HTML içinde göstermek için (Swal pencereleri)
+    resimHtml(src) {
+      return `<img src="${src}" style="width:120px;height:120px;image-rendering:pixelated;background:#b9e08d;border:3px solid black;border-radius:8px">`
+    },
+
     // kontrol = true ise backend günlük kontrolü (ceza/ölüm) yapar.
     // Sadece sayfa ilk açıldığında true gönderiyoruz.
     async getUserProfile(kontrol = false) {
-      const token = localStorage.getItem('token')
       try {
-        const res = await axios.get('http://localhost:3000/getUserInfo', {
+        const res = await axios.get(`${API}/getUserInfo`, {
+          ...yetki(),
           params: kontrol ? { kontrol: 1 } : {},
-          headers: { Authorization: `Bearer ${token}` },
         })
         const eskiAd = this.ordek.ad
+        this.yuklendi = true
         this.kullanici = {
           nickname: res.data.nickname,
           level: res.data.level,
           hp: res.data.hp,
           xp: res.data.xp,
           title: res.data.title,
+          ciftlikSayisi: res.data.ciftlikSayisi ?? 0,
         }
         if (res.data.ordek) this.ordek = res.data.ordek
 
@@ -118,7 +124,7 @@ export default {
           await this.olumGoster(b.olenOrdek)
         } else if (b && b.ceza > 0) {
           await Swal.fire({
-            title: `${this.ordek.ad || eskiAd || 'Ördeğin'} sen yokken ${b.ceza} can kaybetti 😢`,
+            title: `${kacis(this.ordek.ad || eskiAd || 'Ördeğin')} sen yokken ${b.ceza} can kaybetti 😢`,
             text:
               this.ordek.ruh_hali === 'hasta'
                 ? 'Çok hasta! Bugün alışkanlıklarını yaparsan iyileşebilir.'
@@ -136,33 +142,90 @@ export default {
 
     olumGoster(olenOrdek) {
       return Swal.fire({
-        title: `${olenOrdek || 'Ördeğin'} öldü 🪦`,
+        title: `${kacis(olenOrdek || 'Ördeğin')} öldü 🪦`,
         text: 'Anı defterine eklendi. Yeni bir yumurtayla baştan başlıyorsun.',
         icon: 'error',
         confirmButtonText: 'Hoşça kal...',
       })
     },
 
-    // Dashboard, görev/alışkanlık işaretlendikten sonra bunu çağırır.
+    // Dashboard ve Görevler sayfası, bir şey işaretlendikten sonra bunu çağırır.
     // sonuc: backend'in cevabı, varsayilan: özel bir olay yoksa gösterilecek mesaj
     async olayGoster(sonuc, varsayilan) {
       const eskiAsama = this.ordek.asama
 
       if (sonuc.oldu) {
         await this.olumGoster(sonuc.olenOrdek)
-      } else if (sonuc.seviyeAtladi) {
-        const buyudu = sonuc.asama !== eskiAsama
+        await this.getUserProfile() // ad boş geleceği için isim penceresi açılır
+        return
+      }
+
+      await this.getUserProfile() // yeni aşama/renk bilgisi gelsin
+      const ad = kacis(this.ordek.ad)
+      const yeniAsama = this.ordek.asama
+
+      if (sonuc.seviyeAtladi && yumurtaMi(eskiAsama) && !yumurtaMi(yeniAsama)) {
+        // Sürpriz anı: yumurtadan ne çıktı?
         await Swal.fire({
-          title: buyudu ? `${this.ordek.ad} büyüdü! 🎉` : `Seviye ${sonuc.seviye}! ⭐`,
-          text: buyudu ? `Artık bir ${ASAMA_ADLARI[sonuc.asama]}` : 'Böyle devam et!',
+          title: `🐣 ${ad} yumurtadan çıktı!`,
+          html: `${this.resimHtml(this.gorsel)}<p style="margin-top:12px">Bu bir <b>${RENK_ADLARI[this.ordek.renk]}</b>!</p>`,
+          confirmButtonText: 'Merhaba küçük!',
+        })
+      } else if (sonuc.seviyeAtladi && yeniAsama !== eskiAsama) {
+        await Swal.fire({
+          title: `${ad} büyüdü! 🎉`,
+          html:
+            `${this.resimHtml(this.gorsel)}<p style="margin-top:12px">Artık bir ${ASAMA_ADLARI[yeniAsama]}</p>` +
+            (yeniAsama === 'yetiskin' ? '<p><b>Onu çiftliğe gönderebilirsin 🏡</b></p>' : ''),
+          confirmButtonText: 'Yaşasın!',
+        })
+      } else if (sonuc.seviyeAtladi) {
+        await Swal.fire({
+          title: `Seviye ${sonuc.seviye}! ⭐`,
+          text: 'Böyle devam et!',
           icon: 'success',
           confirmButtonText: 'Yaşasın!',
         })
       } else if (varsayilan) {
         await Swal.fire(varsayilan)
       }
+    },
 
-      await this.getUserProfile()
+    // Tören: yetişkin ördeği çiftliğe gönder
+    async ciftligeGonder() {
+      const ad = kacis(this.ordek.ad)
+      const onay = await Swal.fire({
+        title: `${ad} çiftliğe gitmeye hazır! 🏡`,
+        html:
+          `${this.resimHtml(this.gorsel)}` +
+          `<p style="margin-top:12px">Onu yumurtadan yetişkinliğe kadar büyüttün.</p>` +
+          `<p>Çiftliğe gönderdiğinde yeni bir yumurtayla başlayacaksın.<br>Alışkanlık serilerin korunacak.</p>`,
+        showCancelButton: true,
+        confirmButtonText: '🏡 Çiftliğe gönder',
+        cancelButtonText: 'Biraz daha kalsın',
+        confirmButtonColor: '#4caf50',
+      })
+      if (!onay.isConfirmed) return
+
+      try {
+        const res = await axios.post(`${API}/ciftligeGonder`, {}, yetki())
+        const d = res.data
+        await Swal.fire({
+          title: `🎉 ${kacis(d.ordek_adi)} çiftliğe katıldı!`,
+          html:
+            `<p><b>${d.buyume_gunu}</b> günde büyüttün. Harika bir bakıcısın!</p>` +
+            `<p>Çiftliğinde artık <b>${d.ciftlikSayisi}</b> ördek var.<br>Unvanın: <b>🏅 ${d.unvan}</b></p>`,
+          icon: 'success',
+          confirmButtonText: 'Yaşasın!',
+        })
+        await this.getUserProfile() // ad boş → yeni yumurtaya isim penceresi
+      } catch (err) {
+        Swal.fire({
+          title: 'Hata',
+          text: err.response?.data?.mesaj || 'Çiftliğe gönderilemedi.',
+          icon: 'error',
+        })
+      }
     },
 
     async isimSor() {
@@ -171,7 +234,7 @@ export default {
 
       const { value: ad } = await Swal.fire({
         title: '🥚 Yeni bir yumurtan var!',
-        text: 'Ona bir isim ver:',
+        html: `${this.resimHtml(ordekGorsel('yumurta', 'sicak'))}<p style="margin-top:12px">İçinden hangi renk ördek çıkacak, kimse bilmiyor 🎁<br>Ona bir isim ver:</p>`,
         input: 'text',
         inputPlaceholder: 'Örn: Pamuk',
         inputAttributes: { maxlength: 20 },
@@ -184,15 +247,10 @@ export default {
       })
 
       try {
-        const token = localStorage.getItem('token')
-        await axios.post(
-          'http://localhost:3000/ordekIsimVer',
-          { ad },
-          { headers: { Authorization: `Bearer ${token}` } },
-        )
+        await axios.post(`${API}/ordekIsimVer`, { ad }, yetki())
         this.ordek.ad = ad.trim()
         Swal.fire({
-          title: `Merhaba ${ad.trim()}! 🐣`,
+          title: `Merhaba ${kacis(ad.trim())}! 🐣`,
           text: 'Alışkanlıklarını yaptıkça büyüyecek. Ona iyi bak!',
           icon: 'success',
         })
@@ -224,8 +282,8 @@ export default {
   border-radius: 10px;
   width: 260px;
   text-align: center;
-  margin-top: 3rem;
-  margin-left: 1rem;
+  margin: 3rem auto 0;
+  max-width: 100%;
 }
 .ordek-adi {
   margin: 0;
@@ -267,14 +325,38 @@ export default {
   50% { transform: rotate(3deg); }
 }
 .durum {
-  margin: 10px 0;
+  margin: 10px 0 0;
   font-weight: bold;
+}
+.renk-adi {
+  margin: 2px 0 0;
+  font-size: 0.8rem;
+  opacity: 0.95;
+}
+.ciftlik-btn {
+  margin-top: 10px;
+  width: 100%;
+  background: #ffd54f;
+  color: #2d2020;
+  border: 3px solid black;
+  border-radius: 8px;
+  font-weight: bold;
+  padding: 6px;
+  font-family: monospace;
+  animation: parilda 1.5s ease-in-out infinite;
+}
+.ciftlik-btn:hover {
+  background: #ffca28;
+}
+@keyframes parilda {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 213, 79, 0.9); }
+  50% { box-shadow: 0 0 0 6px rgba(255, 213, 79, 0); }
 }
 .bar-etiket {
   display: flex;
   justify-content: space-between;
   font-size: 0.85rem;
-  margin-top: 6px;
+  margin-top: 10px;
 }
 .bar {
   height: 14px;
@@ -294,9 +376,24 @@ export default {
   margin: 12px 0 2px;
   font-weight: bold;
 }
+.unvan {
+  margin: 0 0 4px;
+  font-size: 0.9rem;
+}
 .nickname {
   margin: 0;
   font-size: 0.85rem;
   opacity: 0.9;
+}
+/* Telefonda daha kompakt */
+@media (max-width: 767px) {
+  .ordek-kart {
+    margin-top: 1.5rem;
+    padding: 14px;
+  }
+  .ordek-img {
+    width: 96px;
+    height: 96px;
+  }
 }
 </style>

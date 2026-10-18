@@ -48,7 +48,7 @@ const register = async (req, res) => {
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
-const { gunlukKontrol, asamaBul, ruhHaliBul } = require("../Services/ordekService");
+const { gunlukKontrol, asamaBul, ruhHaliBul, unvanHesapla } = require("../Services/ordekService");
 
 // giriş yapma
 const login = (req, res) => {
@@ -107,7 +107,7 @@ const getUserInfo = async (req, res) => {
   const userId = req.tokenPayload.kullanici_id;
 
   try {
-        // Günlük kontrol sadece ?kontrol=1 ile istenirse yapılır (ördek kartı ister)
+    // Günlük kontrol sadece ?kontrol=1 ile istenirse yapılır (ördek kartı ister)
     const kontrol = req.query.kontrol === "1" ? await gunlukKontrol(userId) : null;
 
     const [rows] = await db.promise().query(
@@ -118,6 +118,11 @@ const getUserInfo = async (req, res) => {
     }
     const user = rows[0];
 
+    // Unvan artık çiftlikteki ördek sayısına göre
+    const [[{ ciftlikSayisi }]] = await db.promise().query(
+      "SELECT COUNT(*) AS ciftlikSayisi FROM ciftlik WHERE kullanici_id = ?", [userId]
+    );
+
     res.json({
       name: user.kullanici_adi,
       surname: user.kullanici_soyadi,
@@ -125,14 +130,16 @@ const getUserInfo = async (req, res) => {
       level: user.kullanici_seviyesi,
       hp: user.kullanici_saglik,
       xp: user.kullanici_tecrübe,
-      title: user.kullanici_unvan,
+      title: unvanHesapla(ciftlikSayisi).unvan,
+      ciftlikSayisi,
       ordek: {
         ad: user.ordek_adi,
+        renk: user.ordek_renk,
         asama: asamaBul(user.kullanici_seviyesi),
         ruh_hali: ruhHaliBul(user.kullanici_saglik, user.kullanici_seviyesi),
         dogum_tarihi: user.ordek_dogum_tarihi,
       },
-      bildirim: kontrol, // { ceza, oldu, olenOrdek }
+      bildirim: kontrol,
     });
   } catch (err) {
     console.error("getUserInfo hatası:", err);
@@ -169,7 +176,7 @@ const aniDefteri = async (req, res) => {
 
   try {
     const [rows] = await db.promise().query(
-      `SELECT ani_id, ordek_adi, ulastigi_seviye,
+      `SELECT ani_id, ordek_adi, renk, ulastigi_seviye,
               DATE_FORMAT(dogum_tarihi, '%Y-%m-%d') AS dogum,
               DATE_FORMAT(olum_tarihi, '%Y-%m-%d') AS olum,
               DATEDIFF(olum_tarihi, dogum_tarihi) AS yasadigi_gun

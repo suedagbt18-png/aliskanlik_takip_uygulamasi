@@ -1,34 +1,34 @@
-<template>
+<template> 
   <footer class="footer">
-    <div class="footer-content">
-      <p>© 2025 Sueda. Tüm hakları saklıdır.</p>
-      <img :src="logo" alt="logo" style="height: 50px" />
-    </div>
+    <img :src="logo" alt="logo" class="footer-logo" />
+    <p>© {{ yil }} Sueda. Tüm hakları saklıdır.</p>
   </footer>
 </template>
 
 <script setup>
 import logo from '@/assets/logo.png'
+
+const yil = new Date().getFullYear()
 </script>
 
 <style scoped>
+
 .footer {
   background-color: #8cc850;
-  padding: 1.5rem;
-  height: 70px;
-  width: 100vw;
-
-  position: fixed;
-  bottom: 0px;
-  left: 0px;
-
-  text-align: center;
-}
-
-.footer-content {
+  border-top: 4px solid black;
+  padding: 1rem;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: center;
+  gap: 0.75rem;
+  color: white;
+  font-family: monospace;
+}
+.footer p {
+  margin: 0;
+}
+.footer-logo {
+  height: 32px;
+  image-rendering: pixelated;
 }
 </style>

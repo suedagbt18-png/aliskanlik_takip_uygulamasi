@@ -8,6 +8,7 @@ import loginLayout from '@/layouts/loginLayout.vue'
 import Aliskanliklar from '@/views/Aliskanliklar.vue'
 import Yardım from '@/views/Yardım.vue'
 import AniDefteri from '@/views/AniDefteri.vue'
+import Ciftlik from '@/views/Ciftlik.vue'
 
 const routes = [
   {
@@ -28,6 +29,7 @@ const routes = [
   { path: '/aliskanliklar', component: Aliskanliklar, meta: { requiresAuth: true } },
   { path: '/yardım', component: Yardım, meta: { requiresAuth: true } },
   { path: '/ani-defteri', component: AniDefteri, meta: { requiresAuth: true } },
+  { path: '/ciftlik', component: Ciftlik, meta: { requiresAuth: true } },
 ]
 
 const router = createRouter({

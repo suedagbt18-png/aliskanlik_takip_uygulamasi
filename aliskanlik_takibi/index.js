@@ -31,4 +31,6 @@ const gorevRoute = require("./Routers/gorevRouter");
 
 const aliskanlikRoute = require("./Routers/aliskanlikRouter");
 
-app.use("/", authRoute, seviyeRoute, gorevRoute, aliskanlikRoute);
+const ciftlikRoute = require("./Routers/ciftlikRouter");
+
+app.use("/", authRoute, seviyeRoute, gorevRoute, aliskanlikRoute, ciftlikRoute);
